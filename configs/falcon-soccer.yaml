@@ -1,0 +1,73 @@
+# Youth soccer filmed by an XbotGo Falcon (or any auto-tracking camera) — pans, tilts and zooms to follow the ball.
+#
+# The Falcon breaks the one assumption sports-field.yaml rests on: the camera
+# is not locked off. It follows play continuously, so raw frame difference
+# mostly measures the camera moving, and every fast pan looks like a "cut".
+#
+# So: motion and scene change are measured *after* aligning out the camera's
+# own pan/tilt/zoom (hypecut.camera), the camera's speed itself becomes a weak
+# signal (it swings hardest on a breakaway), and shot snapping ignores any
+# boundary the camera motion explains — a Falcon game is one continuous shot.
+#
+# Used by `hypecut falcon` for hybrid and detect modes. Parent taps from the
+# .mark file are handled by that command directly; to fuse them into the
+# generic pipeline instead, run `hypecut cut --marks game.mark`.
+profile: falcon-soccer
+
+signals:
+  enabled: [crowd_roar, audio_rms, audio_transient, whistle, motion, camera_pan]
+  weights:
+    crowd_roar: 1.6 # touchline parents cheering is still the best single cue
+    audio_rms: 0.8
+    audio_transient: 0.7 # ball strikes, shouts
+    whistle: 0.4 # youth refs whistle for everything; a weak boundary hint
+    motion: 1.0 # residual motion = players and ball, not the camera
+    camera_pan: 0.5 # the Falcon swinging hard to keep up with a fast break
+  params:
+    motion:
+      compensate_camera: true
+      threshold: 6.0
+    camera_pan:
+      scales: [0.98, 1.0, 1.02]
+    crowd_roar:
+      sustain_seconds: 1.5
+      baseline_seconds: 20.0
+      low_hz: 120
+      high_hz: 2000
+  # 5 Hz is plenty for soccer and halves the cost of the motion estimate on a
+  # 90-minute game (about 2-3 minutes of analysis on a laptop).
+  grid_fps: 5.0
+  frame_width: 96
+  frame_height: 54
+  smooth_seconds: 2.0
+
+segments:
+  min_duration: 10.0
+  max_duration: 30.0
+  pre_roll: 7.0 # the build-up is the story for a parent
+  post_roll: 5.0
+  reaction_lag: 2.0
+  merge_gap: 2.0 # same as the runner's merge rule
+  percentile: 94.0
+  max_clips: 0
+  target_duration: 240.0
+  min_prominence: 3.0 # small crowds and wind noise: be a little more lenient
+  snap_to_shots: false # one continuous shot...
+  snap_compensate_camera: true # ...and if snapping is turned on, pans are not cuts
+  trim_to_silence: true
+  min_silence: 0.4
+  silence_drop_db: 10.0
+  silence_window: 3.0
+
+render:
+  crf: 21
+  fade: 0.25
+  normalize_audio: true
+
+refiners: [diversity, pacing]
+refiner_params:
+  pacing:
+    ideal: 16.0
+    tolerance: 8.0
+  diversity:
+    min_gap: 90.0

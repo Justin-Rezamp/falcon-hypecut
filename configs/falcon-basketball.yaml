@@ -1,0 +1,57 @@
+# Youth basketball filmed by an XbotGo Falcon — an auto-tracking camera that pans end to end with every possession.
+#
+# Same idea as falcon-soccer.yaml, tuned for a gym: the camera swings the
+# length of the court on every transition, so camera speed is a stronger cue;
+# a gym is loud and reverberant, so raw loudness counts for less; and the
+# buzzer and whistles are frequent enough to be a useful hint.
+profile: falcon-basketball
+
+signals:
+  enabled: [crowd_roar, audio_transient, whistle, motion, camera_pan]
+  weights:
+    crowd_roar: 1.5
+    audio_transient: 0.6 # every dribble is a transient in a gym; keep it modest
+    whistle: 0.5
+    motion: 1.0
+    camera_pan: 0.8 # a fast break is the camera crossing the whole court
+  params:
+    motion:
+      compensate_camera: true
+      threshold: 6.0
+    camera_pan:
+      scales: [0.98, 1.0, 1.02]
+    crowd_roar:
+      sustain_seconds: 1.2
+      baseline_seconds: 15.0
+      low_hz: 150
+      high_hz: 2500
+  grid_fps: 5.0
+  smooth_seconds: 1.5
+
+segments:
+  min_duration: 8.0
+  max_duration: 22.0
+  pre_roll: 6.0
+  post_roll: 4.0
+  reaction_lag: 1.0
+  merge_gap: 2.0
+  percentile: 94.0
+  max_clips: 0
+  target_duration: 180.0
+  min_prominence: 3.0
+  snap_to_shots: false
+  snap_compensate_camera: true
+  trim_to_silence: false # a gym is never quiet
+
+render:
+  crf: 21
+  fade: 0.2
+  normalize_audio: true
+
+refiners: [diversity, pacing]
+refiner_params:
+  pacing:
+    ideal: 12.0
+    tolerance: 6.0
+  diversity:
+    min_gap: 60.0
