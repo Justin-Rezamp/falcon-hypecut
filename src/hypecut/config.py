@@ -107,6 +107,10 @@ class SegmentConfig:
     snap_fine: bool = True  # re-check at native frame rate for frame accuracy
     snap_guard: float = 0.75  # minimum footage kept after the peak when snapping the end
     snap_to_dissolves: bool = True  # also land on crossfades and fades, not just hard cuts
+    # Auto-tracking cameras (XbotGo Falcon and friends): ignore "boundaries"
+    # that the camera's own pan/tilt/zoom explains. Off by default — on cut
+    # footage it costs a global-motion estimate and changes nothing.
+    snap_compensate_camera: bool = False
 
     # Silence-aware trimming — the audio half of the same problem. Only edges
     # that found no shot boundary are considered, so a real cut always wins.

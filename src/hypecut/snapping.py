@@ -401,6 +401,12 @@ def snap_segments(
     cuts = find_boundaries(ctx.gray, ctx.grid_fps)
     dissolves = find_dissolves(ctx.gray, ctx.grid_fps) if cfg.snap_to_dissolves else []
     wipes = find_wipes(ctx.gray, ctx.grid_fps) if cfg.snap_to_dissolves else []
+    if cfg.snap_compensate_camera:
+        # On an auto-tracking camera a fast pan or zoom changes every pixel
+        # and reads as a cut, and a steady pan sweeps across the frame exactly
+        # like a wipe. Neither is an edit. Keep only boundaries the camera's
+        # own motion does not explain.
+        cuts, dissolves, wipes = drop_camera_moves(ctx, cuts, dissolves, wipes)
 
     # A gradual transition has two useful landing points, and which one is
     # right depends on the edge: an in-point wants the far side, so the clip
@@ -512,6 +518,40 @@ def snap_segments(
             seg.meta["snapped"] = moved
             seg.meta["snap_kind"] = kinds
     return segments
+
+
+def drop_camera_moves(
+    ctx: AnalysisContext,
+    cuts: np.ndarray,
+    dissolves: list[tuple[float, float]],
+    wipes: list[tuple[float, float]],
+    *,
+    max_explained: float = 0.5,
+) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]:
+    """Remove boundaries that camera pan/tilt/zoom accounts for.
+
+    A real cut replaces the picture, so aligning the previous frame to the
+    current one explains almost none of the difference. A pan or zoom is the
+    opposite: once aligned, little is left. ``max_explained`` is the share of
+    the raw difference camera motion may explain before a boundary is dropped.
+    """
+    from .camera import camera_motion_for
+
+    if ctx.gray is None or ctx.gray.shape[0] < 2:
+        return cuts, dissolves, wipes
+    explained = camera_motion_for(ctx).explained()
+    n = explained.size
+
+    def idx(t: float) -> int:
+        return int(min(n - 1, max(0, round(t * ctx.grid_fps))))
+
+    kept_cuts = np.asarray([t for t in cuts if explained[idx(t)] <= max_explained], dtype=float)
+
+    def span_ok(span: tuple[float, float]) -> bool:
+        lo, hi = idx(span[0]), idx(span[1])
+        return float(np.mean(explained[lo : max(lo + 1, hi + 1)])) <= max_explained
+
+    return kept_cuts, [d for d in dissolves if span_ok(d)], [w for w in wipes if span_ok(w)]
 
 
 def _refined_or(
