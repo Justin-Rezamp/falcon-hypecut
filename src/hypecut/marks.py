@@ -112,19 +112,22 @@ class FalconClip:
 def find_mark_file(video: str | Path) -> Path | None:
     """The ``.mark`` file that belongs to ``video``, if one sits next to it.
 
-    Tries ``match.mark`` and ``match.mp4.mark`` (both seen in the wild), then a
-    case-insensitive match of either in the same folder.
+    Tries ``match.mark`` and ``match.mp4.mark``, first next to the video and
+    then in a hidden ``.data`` folder beside it — which is where the Falcon
+    keeps its ``.mark`` / ``.vdata`` / ``.track`` files on the SD card — with a
+    case-insensitive match as the fallback in each place.
     """
     video = Path(video)
-    candidates = [video.with_suffix(".mark"), video.with_name(video.name + ".mark")]
-    for c in candidates:
-        if c.is_file():
-            return c
-    if video.parent.is_dir():
-        wanted = {c.name.lower() for c in candidates}
-        for entry in video.parent.iterdir():
-            if entry.is_file() and entry.name.lower() in wanted:
-                return entry
+    names = [video.stem + ".mark", video.name + ".mark"]
+    for folder in (video.parent, video.parent / ".data"):
+        for name in names:
+            if (folder / name).is_file():
+                return folder / name
+        if folder.is_dir():
+            wanted = {n.lower() for n in names}
+            for entry in folder.iterdir():
+                if entry.is_file() and entry.name.lower() in wanted:
+                    return entry
     return None
 
 

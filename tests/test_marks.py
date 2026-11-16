@@ -85,6 +85,18 @@ def test_sibling_mark_file_is_found(tmp_path, name):
     assert found is not None and found.name == name
 
 
+def test_mark_file_in_the_sd_card_data_folder_is_found(tmp_path):
+    video = tmp_path / "20261114_093000.mp4"
+    video.write_bytes(b"")
+    data = tmp_path / ".data"
+    data.mkdir()
+    (data / "20261114_093000.mark").write_text("[]", encoding="utf-8")
+    assert find_mark_file(video) == data / "20261114_093000.mark"
+    # A copy right next to the video wins over the hidden one.
+    (tmp_path / "20261114_093000.mark").write_text("[]", encoding="utf-8")
+    assert find_mark_file(video) == tmp_path / "20261114_093000.mark"
+
+
 def test_no_sibling_means_none(tmp_path):
     video = tmp_path / "game.mp4"
     video.write_bytes(b"")
