@@ -42,13 +42,24 @@ from ..marks import MarkFileError, parse_marks
 from ..reframe import MODES as REFRAME_MODES
 
 DATA_DIR = Path(os.environ.get("HYPECUT_DATA_DIR", "./hypecut-data")).resolve()
-MAX_UPLOAD_MB = int(os.environ.get("HYPECUT_MAX_UPLOAD_MB", "4096"))
+#: A 4K XbotGo Falcon game is ~22 GB per hour at 50 Mbps, so the default
+#: allows a full 90-minute 4K match. Lower it for shared/public deployments.
+MAX_UPLOAD_MB = int(os.environ.get("HYPECUT_MAX_UPLOAD_MB", "65536"))
 WORKERS = int(os.environ.get("HYPECUT_WORKERS", "1"))
 # Finished jobs (and their uploads / renders) are deleted after this many hours.
 JOB_TTL_HOURS = float(os.environ.get("HYPECUT_JOB_TTL_HOURS", "24"))
 # Keep the uploaded source after processing (default: delete it to save disk).
 KEEP_UPLOADS = os.environ.get("HYPECUT_KEEP_UPLOADS", "").lower() in {"1", "true", "yes"}
-PROFILES_DIR = Path(os.environ.get("HYPECUT_PROFILES_DIR", "configs"))
+_REPO_CONFIGS = Path(__file__).resolve().parents[3] / "configs"
+
+
+def _default_profiles_dir() -> Path:
+    """``./configs`` when run from the repo, else the repo's configs next to the package."""
+    cwd_configs = Path("configs")
+    return cwd_configs if cwd_configs.is_dir() else _REPO_CONFIGS
+
+
+PROFILES_DIR = Path(os.environ.get("HYPECUT_PROFILES_DIR") or _default_profiles_dir())
 TOKEN = os.environ.get("HYPECUT_TOKEN", "").strip()
 TOKEN_COOKIE = "hypecut_token"
 PUBLIC_PATHS = {"/api/meta", "/login"}

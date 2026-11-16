@@ -119,3 +119,25 @@ def test_variant_renders_are_downloadable(client, sample_vod):
     assert reel.status_code == 200
     assert reel.headers["content-type"] == "video/mp4"
     assert client.get(f"/api/jobs/{job_id}/reel/square").status_code == 404
+
+
+def test_default_upload_limit_fits_a_full_4k_falcon_game(client):
+    # A 58-minute 4K Falcon recording is 21.7 GB; the old 4 GB default rejected it.
+    assert client.get("/api/meta").json()["max_upload_mb"] >= 32 * 1024
+
+
+def test_profiles_found_when_served_outside_the_repo(tmp_path, monkeypatch):
+    monkeypatch.setenv("HYPECUT_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.delenv("HYPECUT_PROFILES_DIR", raising=False)
+    monkeypatch.chdir(tmp_path)
+    import importlib
+
+    from hypecut.web import app as app_module
+
+    importlib.reload(app_module)
+    try:
+        with TestClient(app_module.app) as c:
+            names = [p["name"] for p in c.get("/api/meta").json()["profiles"]]
+        assert "falcon-soccer" in names
+    finally:
+        app_module.store.shutdown(timeout=2)

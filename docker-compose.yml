@@ -13,7 +13,7 @@ services:
     environment:
       HYPECUT_DATA_DIR: /data
       HYPECUT_WORKERS: "1"          # one encode at a time; raise if you have cores
-      HYPECUT_MAX_UPLOAD_MB: "4096"
+      HYPECUT_MAX_UPLOAD_MB: "65536"
       HYPECUT_JOB_TTL_HOURS: "24"   # finished jobs and their files are deleted after this
       # HYPECUT_TOKEN: "change-me"  # required if the port is reachable from other machines
     restart: unless-stopped

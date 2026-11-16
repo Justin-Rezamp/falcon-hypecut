@@ -7,7 +7,7 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     HYPECUT_DATA_DIR=/data \
     HYPECUT_WORKERS=1 \
-    HYPECUT_MAX_UPLOAD_MB=4096
+    HYPECUT_MAX_UPLOAD_MB=65536
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ffmpeg tini \
