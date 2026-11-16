@@ -22,3 +22,7 @@ hypecut-data/
 .DS_Store
 .idea/
 .vscode/
+
+# Local Falcon game footage and web job data
+games/
+hypecut-data/
