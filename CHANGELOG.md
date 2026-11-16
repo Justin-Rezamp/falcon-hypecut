@@ -5,6 +5,21 @@ All notable changes are documented here. This project follows
 
 ## [Unreleased]
 
+### Added (falcon-hypecut fork)
+- **`hypecut falcon`** for XbotGo Falcon recordings: `marks` mode (the Falcon
+  Highlights runner rules — 10 s pad, merge within 2 s,
+  `clip01_mark_9-09[_merged].mp4`), `hybrid` mode (taps refined toward the
+  detectors' action peak, optional `_auto_` extras) and `detect` mode; HEVC/4K
+  analysed on a proxy; stream copy for H.264/AAC, H.264 re-encode otherwise;
+  `--phone`, `--vertical`, `--loudnorm`, `--plan-only`, `--from-plan`.
+- **`.mark` parsing** (`hypecut.marks`) and the **`falcon_marks`** signal;
+  `cut` / `analyze` accept `--marks`.
+- **Camera-motion compensation** (`hypecut.camera`): opt-in
+  `compensate_camera` for `motion` and `scene_change`, a new `camera_pan`
+  signal, and `segments.snap_compensate_camera`. Defaults unchanged.
+- **Profiles** `falcon-soccer.yaml` and `falcon-basketball.yaml`.
+- **Web UI**: optional `.mark` upload, per-clip downloads.
+
 ### Fixed
 - **A clip can no longer open behind the previous clip's out-point.** `merge`
   leaves clips more than `merge_gap` (2 s) apart, but snapping may move an

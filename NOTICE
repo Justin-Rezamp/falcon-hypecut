@@ -1,0 +1,18 @@
+HypeCut
+Copyright 2026 HypeCut contributors
+https://github.com/Yu-0312/hypecut
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+This distribution is a modified fork ("falcon-hypecut",
+https://github.com/Justin-Rezamp/falcon-hypecut).
+Modifications copyright 2026 Justin Schnettler, also under Apache-2.0:
+XbotGo Falcon .mark support and the `hypecut falcon` command
+(src/hypecut/marks.py, src/hypecut/falcon.py, src/hypecut/signals/marks.py),
+camera-motion compensation (src/hypecut/camera.py and changes to
+src/hypecut/signals/visual.py, src/hypecut/snapping.py, src/hypecut/config.py),
+Falcon profiles (configs/falcon-*.yaml), CLI and web UI changes
+(src/hypecut/cli.py, src/hypecut/jobs.py, src/hypecut/web/), tests and docs.
+
+XbotGo and Falcon are trademarks of their respective owner. This project is
+not affiliated with or endorsed by XbotGo.

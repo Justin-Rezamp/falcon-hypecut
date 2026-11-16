@@ -2,6 +2,11 @@
 
 **Drop in a VOD, get back the good parts.**
 
+> **This fork adds XbotGo Falcon support** — `hypecut falcon game.mp4` turns a
+> youth-sports game from an auto-tracking camera plus its `.mark` file (the
+> taps you made in the app) into `highlights.mp4` and named clips. See
+> [XbotGo Falcon](#xbotgo-falcon) below and [docs/falcon.md](docs/falcon.md).
+
 HypeCut watches a long recording — a gameplay VOD, a football match, a lecture
 — finds the moments that matter, and stitches them into a single highlight
 reel, with a machine-readable cut list explaining why every clip was chosen.
@@ -294,6 +299,8 @@ A profile is a small YAML file. Shipped ones:
 | `shorts.yaml` | Shorts / Reels / TikTok | 9:16 tracking crop, picky, short punchy clips |
 | `sports-broadcast.yaml` | televised football, basketball, hockey | crowd roar, whistle, scoreboard, reaction lag |
 | `sports-field.yaml` | phone on the sideline, club matches | crowd roar + motion only, no cuts to snap to |
+| `falcon-soccer.yaml` | XbotGo Falcon / auto-tracking camera, youth soccer | camera-motion-compensated motion, camera speed, pans are not cuts |
+| `falcon-basketball.yaml` | XbotGo Falcon / auto-tracking camera, youth basketball | same, tuned for a gym and full-court swings |
 
 Copy one, change numbers, pass `--profile my.yaml`. No Python required.
 
@@ -321,6 +328,32 @@ The same three questions are how you'd adapt HypeCut to anything else: when
 does the evidence arrive relative to the event, is the evidence an edge or a
 plateau, and is there a region of the frame that already knows the answer.
 [docs/EXTENDING.md](docs/EXTENDING.md) walks through it.
+
+## XbotGo Falcon
+
+An [XbotGo Falcon](https://xbotgo.com) follows the play by itself and saves a
+`.mark` file of the moments a parent tapped. `hypecut falcon` builds the reel
+from those taps, with the same rules as the Falcon Highlights runner:
+
+```bash
+hypecut falcon game.mp4 --plan-only    # print the clip table, cut nothing
+hypecut falcon game.mp4                # -> game_highlights/highlights.mp4 + clips/clip01_mark_9-09.mp4 ...
+hypecut falcon game.mp4 --mode hybrid --phone --vertical --loudnorm
+```
+
+| Mode | What it does |
+|---|---|
+| `marks` | 10 s either side of each tap, merge within 2 s, `clip01_mark_9-09[_merged].mp4` |
+| `hybrid` | every tap still makes a clip; detectors slide its window toward the action peak |
+| `detect` | no taps; the `falcon-soccer` / `falcon-basketball` profiles |
+
+Because the Falcon pans and zooms all game, its profiles measure motion *after*
+removing the camera's own movement (`hypecut.camera`), so a pan is not "action"
+and a whip pan is not a "cut". HEVC or 4K sources are analysed on a small proxy
+and cut from the original; clips are stream-copied when the source is
+H.264/AAC and re-encoded to H.264 otherwise. The web UI takes a `.mark` upload
+too. Windows quickstart, how to get the files off the camera, and limitations:
+[docs/falcon.md](docs/falcon.md).
 
 ## Writing a detector
 
@@ -483,7 +516,12 @@ just tune a YAML file against footage you know well and open a PR.
 
 ## Licence
 
-Apache-2.0. See [LICENSE](LICENSE).
+Apache-2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
+
+This is a modified fork of [HypeCut](https://github.com/Yu-0312/hypecut) by the
+HypeCut contributors. Modifications (XbotGo Falcon support: `.mark` parsing,
+`hypecut falcon`, camera-motion compensation, Falcon profiles, web upload of
+`.mark` files) are by Justin Schnettler, 2026, under the same licence.
 
 HypeCut only ever reads files you give it. It ships no models, downloads
 nothing at runtime unless you enable an optional refiner, and sends nothing
