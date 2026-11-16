@@ -50,6 +50,8 @@ class Job:
     # are empty when the video had nothing in it.
     parts: list[str] = field(default_factory=list)
     variants: dict[str, str] = field(default_factory=dict)
+    #: Individual clips of a Falcon job, in reel order (clip01_mark_9-09.mp4 ...).
+    clips: list[str] = field(default_factory=list)
     plan: dict[str, Any] | None = None
     error: str | None = None
     options: dict[str, Any] = field(default_factory=dict)
@@ -64,6 +66,15 @@ class Job:
         data["parts"] = len(self.parts)
         # Names only — the browser fetches each by name, never by path.
         data["variants"] = sorted(self.variants)
+        # File names (not paths) of a Falcon job's clips; fetched by index.
+        data["clips"] = [Path(c).name for c in self.clips]
+        falcon = (self.options or {}).get("falcon")
+        if falcon:
+            # The uploaded .mark lives at a server path; say only that it exists.
+            data["options"] = {
+                **self.options,
+                "falcon": {**falcon, "marks": bool(falcon.get("marks"))},
+            }
         return data
 
 
@@ -176,6 +187,18 @@ class JobStore:
             job.progress = round(max(0.0, min(1.0, fraction)), 4)
             job.message = message
 
+        if job.options.get("falcon"):
+            try:
+                self._process_falcon(job, progress)
+            except Exception as exc:
+                job.status = JobStatus.FAILED
+                job.error = str(exc)
+                job.message = "failed"
+                raise
+            finally:
+                job.finished_at = time.time()
+            return
+
         try:
             cfg = load_config(job.options.get("profile") or None)
             overrides = _options_to_overrides(job.options)
@@ -224,6 +247,59 @@ class JobStore:
         finally:
             job.finished_at = time.time()
 
+    def _process_falcon(self, job: Job, progress) -> None:
+        """XbotGo Falcon job: marks / hybrid / detect, clips plus a reel."""
+        from .falcon import FalconOptions, plan_falcon, render_falcon
+
+        opts_in = job.options["falcon"]
+        pad = float(opts_in.get("pad", 10.0))
+        opts = FalconOptions(
+            mode=str(opts_in.get("mode") or ""),
+            before=pad,
+            after=pad,
+            extras=int(opts_in.get("extras", 0)),
+            phone=bool(opts_in.get("phone")),
+            vertical=bool(opts_in.get("vertical")),
+            loudnorm=bool(opts_in.get("phone") or opts_in.get("vertical")),
+            profile=opts_in.get("profile"),
+            cache_dir=str(self.data_dir / "proxies"),
+        )
+        holder: dict[str, Any] = {}
+        plan = plan_falcon(
+            job.source,
+            marks=opts_in.get("marks"),
+            options=opts,
+            progress=lambda p, m: progress(p * 0.4, m),
+            _ctx_out=holder,
+        )
+        job.plan = plan.to_dict()
+        if not plan.kept:
+            job.status = JobStatus.DONE
+            job.progress = 1.0
+            job.message = "no clips to cut"
+            return
+        out = render_falcon(
+            plan,
+            self.outputs / job.id,
+            opts,
+            progress=lambda p, m: progress(0.4 + p * 0.6, m),
+            ctx=holder.get("ctx"),
+        )
+        job.output = str(out.highlights)
+        job.parts = [str(out.highlights)]
+        job.clips = [str(c) for c in out.clips]
+        job.variants = {
+            k: str(v) for k, v in (("phone", out.phone), ("vertical", out.vertical)) if v
+        }
+        plan_dict = plan.to_dict()
+        plan_dict["render_notes"] = out.notes
+        job.plan = plan_dict
+        job.status = JobStatus.DONE
+        job.progress = 1.0
+        job.message = f"{len(out.clips)} clips ready"
+        if opts_in.get("marks") and not self._keep_uploads:
+            Path(opts_in["marks"]).unlink(missing_ok=True)
+
     # ---------------------------------------------------------------- private
 
     def _maybe_sweep(self, every: float = 60.0) -> None:
@@ -252,10 +328,19 @@ class JobStore:
             return
         # Every reel part (not only the first), variants, and sidecars named after the job id.
         paths = {job.source, job.output, *job.parts, *job.variants.values()}
-        paths.update(str(p) for p in self.outputs.glob(f"{job.id}*"))
+        paths.update(str(p) for p in self.outputs.glob(f"{job.id}*") if p.is_file())
+        falcon = (job.options or {}).get("falcon") or {}
+        if falcon.get("marks"):
+            paths.add(str(falcon["marks"]))
         for path in paths:
             if path:
                 Path(path).unlink(missing_ok=True)
+        # A Falcon job writes a folder (clips/, reel, plan) rather than files.
+        folder = self.outputs / job.id
+        if folder.is_dir():
+            import shutil
+
+            shutil.rmtree(folder, ignore_errors=True)
 
 
 def _options_to_overrides(options: dict[str, Any]) -> dict[str, Any]:

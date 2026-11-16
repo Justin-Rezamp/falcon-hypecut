@@ -7,6 +7,7 @@ Endpoints
 ``GET  /api/jobs/{id}``       status, progress and the cut list
 ``GET  /api/jobs/{id}/reel``  the rendered mp4
 ``GET  /api/jobs/{id}/plan``  the JSON cut list
+``GET  /api/jobs/{id}/clip/{n}``  clip ``n`` (1-based) of a Falcon job
 ``GET  /api/meta``            registered signals, refiners and limits
 ``GET  /login?token=...``     sets the session cookie when HYPECUT_TOKEN is configured
 
@@ -37,6 +38,7 @@ from .. import __version__
 from ..cli import VARIANT_PRESETS
 from ..config import describe_profiles
 from ..jobs import JobStore
+from ..marks import MarkFileError, parse_marks
 from ..reframe import MODES as REFRAME_MODES
 
 DATA_DIR = Path(os.environ.get("HYPECUT_DATA_DIR", "./hypecut-data")).resolve()
@@ -53,6 +55,9 @@ PUBLIC_PATHS = {"/api/meta", "/login"}
 ALLOWED_SUFFIXES = {".mp4", ".mkv", ".mov", ".webm", ".avi", ".flv", ".ts", ".m4v"}
 
 STATIC_DIR = Path(__file__).parent / "static"
+FALCON_MODES = ("marks", "hybrid", "detect")
+#: A real .mark file is a few hundred bytes; anything this big is not one.
+MAX_MARK_BYTES = 1024 * 1024
 
 store = JobStore(
     DATA_DIR,
@@ -145,6 +150,7 @@ def meta() -> dict[str, Any]:
         # Name + the profile's own first comment line, so the picker can offer
         # "football, basketball, broadcast coverage" instead of a filename.
         "profiles": describe_profiles(PROFILES_DIR) if PROFILES_DIR.is_dir() else [],
+        "falcon_modes": list(FALCON_MODES),
     }
 
 
@@ -165,8 +171,41 @@ async def create_job(
     trim_to_silence: bool = Form(True),
     react_to_facecam: bool = Form(False),
     also: str = Form(""),
+    # XbotGo Falcon: an optional .mark file (parent taps) and how to use it.
+    marks: UploadFile | None = File(None),
+    falcon_mode: str = Form(""),
+    falcon_pad: float = Form(10.0, ge=0, le=120),
+    falcon_extras: int = Form(0, ge=0, le=20),
+    falcon_phone: bool = Form(False),
+    falcon_vertical: bool = Form(False),
 ) -> JSONResponse:
     suffix = Path(file.filename or "").suffix.lower()
+    if marks is not None and not (marks.filename or ""):
+        marks = None  # an empty file field from a form that left it blank
+    falcon_mode = falcon_mode.strip().lower()
+    if falcon_mode and falcon_mode not in FALCON_MODES:
+        raise HTTPException(
+            status_code=422, detail=f"Unknown falcon_mode {falcon_mode!r}; expected {FALCON_MODES}"
+        )
+    if falcon_mode in ("marks", "hybrid") and marks is None:
+        raise HTTPException(
+            status_code=422, detail=f"falcon_mode {falcon_mode!r} needs a .mark file"
+        )
+    mark_bytes: bytes | None = None
+    if marks is not None:
+        if Path(marks.filename or "").suffix.lower() != ".mark":
+            raise HTTPException(
+                status_code=415, detail="The marks file must be a Falcon .mark file"
+            )
+        mark_bytes = await marks.read(MAX_MARK_BYTES + 1)
+        if len(mark_bytes) > MAX_MARK_BYTES:
+            raise HTTPException(status_code=413, detail="The .mark file is unexpectedly large")
+        try:
+            parse_marks(json.loads(mark_bytes.decode("utf-8-sig")))
+        except (UnicodeDecodeError, json.JSONDecodeError, MarkFileError) as exc:
+            raise HTTPException(
+                status_code=422, detail=f"Could not read the .mark file: {exc}"
+            ) from exc
     if min_duration > max_duration:
         raise HTTPException(status_code=422, detail="min_duration must not exceed max_duration")
     profile_path = _resolve_profile(profile)
@@ -219,6 +258,23 @@ async def create_job(
         "react_to_facecam": react_to_facecam,
         "variants": {name: VARIANT_PRESETS[name] for name in dict.fromkeys(wanted)},
     }
+    if mark_bytes is not None or falcon_mode:
+        mark_path = None
+        if mark_bytes is not None:
+            mark_path = dest.with_suffix(".mark")
+            mark_path.write_bytes(mark_bytes)
+        options["falcon"] = {
+            "mode": falcon_mode or ("marks" if mark_path else "detect"),
+            "marks": str(mark_path) if mark_path else None,
+            "pad": falcon_pad,
+            "extras": falcon_extras,
+            "phone": falcon_phone,
+            "vertical": falcon_vertical,
+            # The profile picker still applies; empty means the Falcon default.
+            "profile": profile_path
+            if profile_path and "falcon" in Path(profile_path).stem
+            else None,
+        }
     job = store.submit(safe_name, dest, options)
     return JSONResponse({"id": job.id, "status": job.status.value}, status_code=202)
 
@@ -265,6 +321,17 @@ def get_part(job_id: str, index: int) -> FileResponse:
     return FileResponse(
         parts[index - 1], media_type="video/mp4", filename=f"{stem}_highlights_{index}.mp4"
     )
+
+
+@app.get("/api/jobs/{job_id}/clip/{index}")
+def get_clip(job_id: str, index: int) -> FileResponse:
+    """Clip ``index`` (1-based) of a Falcon job, under its clip01_mark_... name."""
+    job = store.get(job_id)
+    clips = (job.clips if job else None) or []
+    if not 1 <= index <= len(clips) or not Path(clips[index - 1]).exists():
+        raise HTTPException(status_code=404, detail=f"No clip {index} for this job")
+    path = Path(clips[index - 1])
+    return FileResponse(path, media_type="video/mp4", filename=path.name)
 
 
 @app.get("/api/jobs/{job_id}/reel/{variant}")

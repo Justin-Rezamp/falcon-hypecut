@@ -116,6 +116,19 @@
     <div class="file" id="fname"></div>
     <input id="picker" type="file" accept="video/*" hidden />
 
+    <div class="ask">Filmed with an XbotGo Falcon?</div>
+    <div class="hint">Add the game's <code>.mark</code> file (the taps you made in the app) and every
+      tap becomes a clip. Taps are not proof of a goal — they mark "something happened near here".</div>
+    <div class="chips">
+      <span class="chip" id="markpick">Add .mark file</span>
+      <span class="file" id="markname"></span>
+    </div>
+    <input id="markfile" type="file" accept=".mark" hidden />
+    <div class="chips" id="falconmode" style="display:none">
+      <span class="chip on" data-mode="marks" title="10 s before and after each tap, nearby taps merged">Just my taps</span>
+      <span class="chip" data-mode="hybrid" title="Slide each window a few seconds toward the action the detectors found">Taps + smart edges</span>
+    </div>
+
     <div class="ask">What kind of video is it?</div>
     <div class="hint">Only changes what counts as exciting. Skip it if you are not sure.</div>
     <div class="chips" id="profiles">
@@ -194,6 +207,7 @@ const $ = (id) => document.getElementById(id);
 let file = null, poll = null;
 let chosenRefiners = new Set(["diversity", "pacing", "similarity"]);
 let profile = "", shape = "wide";
+let markFile = null, falconMode = "marks";
 
 [["target", "v-target", (v) => v + "s"],
  ["per", "v-per", (v) => v],
@@ -244,6 +258,13 @@ fetch("/api/meta").then((r) => r.json()).then((m) => {
 }).catch(() => {});
 
 pickOne($("shape"), (chip) => (shape = chip.dataset.shape));
+pickOne($("falconmode"), (chip) => (falconMode = chip.dataset.mode));
+$("markpick").onclick = () => $("markfile").click();
+$("markfile").onchange = (ev) => {
+  markFile = ev.target.files[0] || null;
+  $("markname").textContent = markFile ? markFile.name : "";
+  $("falconmode").style.display = markFile ? "" : "none";
+};
 ["track", "react", "snap", "trim"].forEach((id) => {
   $(id).onclick = () => $(id).classList.toggle("on");
 });
@@ -288,6 +309,13 @@ $("go").onclick = async () => {
   fd.append("snap_to_shots", $("snap").classList.contains("on"));
   fd.append("trim_to_silence", $("trim").classList.contains("on"));
   fd.append("react_to_facecam", $("react").classList.contains("on"));
+  if (markFile) {
+    fd.append("marks", markFile);
+    fd.append("falcon_mode", falconMode);
+    // Falcon jobs: "tall" adds a 9:16 cut, "both" adds 9:16 and a 1080p phone copy.
+    fd.append("falcon_vertical", shape !== "wide");
+    fd.append("falcon_phone", shape === "both");
+  }
 
   try {
     const res = await fetch("/api/jobs", { method: "POST", body: fd });
@@ -336,11 +364,15 @@ function showReels(id, job) {
     const variants = (job.variants || [])
       .map((v) => `<a class="dl" href="/api/jobs/${id}/reel/${v}" download>${v} version</a>`)
       .join("");
+    const clips = (job.clips || [])
+      .map((name, n) => `<a class="dl" href="/api/jobs/${id}/clip/${n + 1}" download>${name}</a>`)
+      .join("");
     blocks.push(`<div class="part">
       ${many ? `<h3>Part ${i} of ${job.parts}</h3>` : ""}
       <video controls src="${src}"></video>
       <a class="dl" href="${src}" download>Download${many ? ` part ${i}` : ""}</a>
       ${i === 1 ? variants : ""}
+      ${i === 1 ? clips : ""}
     </div>`);
   }
   $("parts").innerHTML = blocks.join("");
@@ -360,6 +392,7 @@ function showNothing(job) {
 
 function renderClips(plan) {
   const box = $("clips");
+  if (plan.falcon_plan) return renderFalcon(plan, box);
   if (!plan.segments || !plan.segments.length) {
     box.className = "empty";
     box.textContent = "Nothing cleared the threshold.";
@@ -387,6 +420,22 @@ function renderClips(plan) {
       <span class="sc">${s.score.toFixed(3)}</span>
     </div>`;
   }).join("");
+}
+
+function renderFalcon(plan, box) {
+  const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+  const facts = (plan.facts || []).map((f) => `<li>${esc(f)}</li>`).join("");
+  const notes = [...(plan.notes || []), ...(plan.render_notes || [])].map((f) => `<li>${esc(f)}</li>`).join("");
+  const rows = (plan.clips || []).map((c) => `<div class="clip">
+      <span class="idx">${esc(c.id.replace("clip", ""))}</span>
+      <span>${hhmmss(c.start)} → ${hhmmss(c.end)}
+        <span class="why">(${c.duration.toFixed(1)}s · ${c.kind === "mark" ? "tap " + esc(c.note) : esc(c.note)} · ${esc(c.filename)})</span></span>
+      <span class="sc">${c.kind}</span>
+    </div>`).join("");
+  box.className = "";
+  box.innerHTML = `<p class="sub">From the files:</p><ul>${facts}</ul>`
+    + (notes ? `<p class="sub">Notes and guesses:</p><ul>${notes}</ul>` : "")
+    + (rows || "<p>No clips.</p>");
 }
 
 function hhmmss(t) {
