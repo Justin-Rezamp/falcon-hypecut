@@ -118,6 +118,17 @@ def build_parser() -> argparse.ArgumentParser:
             ),
         )
         p.add_argument(
+            "--marks",
+            nargs="?",
+            const="",
+            default=None,
+            metavar="MARK",
+            help=(
+                "XbotGo Falcon .mark file to score alongside the video (parent taps); "
+                "without a path, a sibling <video>.mark is used"
+            ),
+        )
+        p.add_argument(
             "--also",
             action="append",
             default=None,
@@ -211,6 +222,8 @@ def build_parser() -> argparse.ArgumentParser:
     ev.add_argument("--json", action="store_true", help="machine-readable results")
     ev.add_argument("-q", "--quiet", action="store_true")
 
+    _add_falcon_parser(sub)
+
     serve = sub.add_parser("serve", help="run the web UI")
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=8000)
@@ -291,7 +304,196 @@ def _config_from_args(args: argparse.Namespace) -> Config:
         signals.setdefault("weights", {})["chat_rate"] = 1.2
         signals.setdefault("params", {})["chat_rate"] = {"log": args.chat}
         overrides["signals"] = signals
+    if getattr(args, "marks", None) is not None:
+        from dataclasses import asdict
+
+        signals = overrides.get("signals") or asdict(cfg.signals)  # type: ignore[assignment]
+        enabled = list(signals.get("enabled") or [])  # type: ignore[union-attr]
+        if "falcon_marks" not in enabled:
+            enabled.append("falcon_marks")
+        signals["enabled"] = enabled  # type: ignore[index]
+        # A tap is a person at the game saying "that one" — the strongest
+        # single cue there is, so it outweighs any one detector.
+        signals.setdefault("weights", {})["falcon_marks"] = 2.0  # type: ignore[union-attr]
+        signals.setdefault("params", {})["falcon_marks"] = {"file": args.marks}  # type: ignore[union-attr]
+        overrides["signals"] = signals
     return cfg.merged(overrides) if overrides else cfg
+
+
+def _add_falcon_parser(sub) -> None:
+    fal = sub.add_parser(
+        "falcon",
+        help="XbotGo Falcon game + .mark file -> highlights.mp4 and named clips",
+        description=(
+            "Cut a youth-sports highlight reel from an XbotGo Falcon recording. "
+            "Modes: marks (parent taps only, the Falcon Highlights runner rules), "
+            "hybrid (taps refined by the detectors), detect (no taps; detectors with "
+            "camera-motion compensation)."
+        ),
+    )
+    fal.add_argument("source", nargs="?", help="the Falcon MP4 (not needed with --from-plan)")
+    fal.add_argument("--marks", metavar="MARK", help="the .mark file (default: <video>.mark)")
+    fal.add_argument(
+        "--mode",
+        choices=["marks", "hybrid", "detect"],
+        help="default: marks if a .mark file is found, else detect",
+    )
+    fal.add_argument("--pad", type=float, help="seconds before AND after each tap (default 10)")
+    fal.add_argument("--before", type=float, help="seconds before each tap (overrides --pad)")
+    fal.add_argument("--after", type=float, help="seconds after each tap (overrides --pad)")
+    fal.add_argument(
+        "--merge-gap", type=float, default=2.0, help="merge clips closer than this (default 2)"
+    )
+    fal.add_argument("--sport", choices=["soccer", "basketball"], default="soccer")
+    fal.add_argument("-p", "--profile", help="override the falcon-<sport>.yaml profile")
+    fal.add_argument(
+        "--extras",
+        type=int,
+        default=0,
+        help="hybrid/detect: add up to N detector-only clips (detect: cap)",
+    )
+    fal.add_argument(
+        "--max-shift",
+        type=float,
+        default=6.0,
+        help="hybrid: how far (s) a window may slide earlier toward the action",
+    )
+    fal.add_argument(
+        "-o",
+        "--output-dir",
+        help="where clips/ and highlights.mp4 go (default: <video>_highlights)",
+    )
+    fal.add_argument(
+        "--cut",
+        choices=["auto", "copy", "encode"],
+        default="auto",
+        help="auto = stream copy for H.264/AAC, else re-encode to H.264",
+    )
+    fal.add_argument("--crf", type=int, default=20, help="x264 quality when re-encoding")
+    fal.add_argument(
+        "--phone", action="store_true", help="also write highlights_phone.mp4 (1080p H.264)"
+    )
+    fal.add_argument(
+        "--vertical",
+        action="store_true",
+        help="also write highlights_vertical.mp4 (9:16, follows the action)",
+    )
+    fal.add_argument("--loudnorm", action="store_true", help="normalise loudness to -16 LUFS")
+    fal.add_argument(
+        "--proxy",
+        choices=["auto", "always", "never"],
+        default="auto",
+        help="analyse a 360p proxy (auto: when HEVC or above 1080p)",
+    )
+    fal.add_argument(
+        "--plan-only",
+        action="store_true",
+        help="write falcon_plan.json and print the clip table; cut nothing",
+    )
+    fal.add_argument(
+        "--from-plan",
+        metavar="PLAN",
+        help="render an (edited) falcon_plan.json instead of planning",
+    )
+    fal.add_argument("--json", action="store_true", help="print the plan as JSON")
+    fal.add_argument("-q", "--quiet", action="store_true")
+
+
+def _run_falcon(args: argparse.Namespace, report) -> int:
+    from .falcon import FalconOptions, load_plan, plan_falcon, render_falcon
+    from .marks import fmt_clock
+
+    pad = args.pad if args.pad is not None else 10.0
+    opts = FalconOptions(
+        mode=args.mode or "",
+        before=args.before if args.before is not None else pad,
+        after=args.after if args.after is not None else pad,
+        merge_gap=args.merge_gap,
+        sport=args.sport,
+        profile=args.profile,
+        extras=max(0, args.extras),
+        max_shift_before=args.max_shift,
+        cut=args.cut,
+        crf=args.crf,
+        phone=args.phone,
+        vertical=args.vertical,
+        loudnorm=args.loudnorm,
+        proxy=args.proxy,
+    )
+    holder: dict[str, Any] = {}
+    if args.from_plan:
+        plan = load_plan(args.from_plan)
+        if args.source:
+            plan.source = str(Path(args.source).resolve())
+    else:
+        if not args.source:
+            print("error: give the Falcon video (or --from-plan PLAN)", file=sys.stderr)
+            return 2
+        plan = plan_falcon(
+            args.source, marks=args.marks, options=opts, progress=report, _ctx_out=holder
+        )
+
+    source = Path(plan.source)
+    out_dir = (
+        Path(args.output_dir) if args.output_dir else source.with_name(f"{source.stem}_highlights")
+    )
+
+    if args.json:
+        print(json.dumps(plan.to_dict(), indent=2, ensure_ascii=False))
+    elif not args.quiet:
+        _print_falcon_plan(plan, fmt_clock)
+
+    if args.plan_only:
+        path = plan.save(out_dir / "falcon_plan.json")
+        if not args.quiet:
+            print(f"\nPlan written to {path}")
+            print("Nothing was cut. Edit keep/start/end there if you like, then run:")
+            print(f'  hypecut falcon --from-plan "{path}"')
+        return 0
+
+    if not plan.kept:
+        print("Nothing to cut: no clips are kept.", file=sys.stderr)
+        return 1
+
+    outputs = render_falcon(plan, out_dir, opts, progress=report, ctx=holder.get("ctx"))
+    report(1.0, "done")
+    if not args.quiet:
+        print()
+        for note in outputs.notes:
+            print(f"note: {note}")
+        print(f"Reel:   {outputs.highlights}")
+        if outputs.phone:
+            print(f"Phone:  {outputs.phone}")
+        if outputs.vertical:
+            print(f"9:16:   {outputs.vertical}")
+        print(f"Clips:  {outputs.out_dir / 'clips'} ({len(outputs.clips)} files)")
+        print(f"Plan:   {outputs.plan}")
+    return 0
+
+
+def _print_falcon_plan(plan, fmt_clock) -> None:
+    print("\nFacts (read from the files):")
+    for fact in plan.facts:
+        print(f"  - {fact}")
+    if plan.notes:
+        print("Notes and inferences:")
+        for note in plan.notes:
+            print(f"  - {note}")
+    print(f"\nMode: {plan.mode}")
+    rows = []
+    for c in plan.clips:
+        window = f"{fmt_clock(c.start)} – {fmt_clock(c.end)}"
+        marks = c.note if c.kind == "mark" else "-"
+        rows.append((c.id, "yes" if c.keep else "no", c.kind, marks, window, c.filename))
+    head = ("ID", "Keep", "Kind", "Mark(s)", "Window", "File")
+    widths = [max(len(str(r[i])) for r in [head, *rows]) + 2 for i in range(5)]
+    line = lambda r: "".join(f"{str(v):<{w}}" for v, w in zip(r[:5], widths, strict=True)) + r[5]  # noqa: E731
+    print(line(head))
+    print("-" * (sum(widths) + max(len(r[5]) for r in [head, *rows])))
+    for r in rows:
+        print(line(r))
+    total = sum(c.duration for c in plan.kept)
+    print(f"\n{len(plan.kept)} clips kept, about {fmt_clock(total)} of highlights")
 
 
 BATCH_PATTERNS = ("*.mp4", "*.mkv", "*.mov", "*.webm", "*.avi", "*.flv", "*.ts", "*.m4v")
@@ -716,6 +918,8 @@ def main(argv: list[str] | None = None) -> int:
             return _run_eval(args)
         if args.command == "render":
             return _run_render(args, _progress(args.quiet))
+        if args.command == "falcon":
+            return _run_falcon(args, _progress(args.quiet))
 
         cfg = _config_from_args(args)
         report = _progress(args.quiet)
@@ -773,7 +977,7 @@ def main(argv: list[str] | None = None) -> int:
     except DownloadError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
-    except (FFmpegError, ValueError, RuntimeError, KeyError) as exc:
+    except (FFmpegError, ValueError, RuntimeError, KeyError, FileNotFoundError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
     except KeyboardInterrupt:  # pragma: no cover
