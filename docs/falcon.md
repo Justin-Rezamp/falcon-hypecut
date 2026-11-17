@@ -200,6 +200,12 @@ All of it is opt-in. Every other profile behaves exactly as before.
 - **`hypecut falcon` needs a checkout** (it reads `configs/falcon-*.yaml` from
   the repo or the current folder), or pass `--profile`.
 
+## Overlay cards
+
+Optional intro/outro, player lower-third, title cards you assign ("Goal!")
+and a score bar, rendered with Remotion: `--intro --outro --player ... --title
+clip05=Goal!`. Off by default. See [overlays.md](overlays.md).
+
 ## Next steps
 
 1. **Click-your-kid tracking:** YOLO person detection + ByteTrack, pick the

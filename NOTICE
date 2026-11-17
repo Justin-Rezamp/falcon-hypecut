@@ -12,7 +12,22 @@ XbotGo Falcon .mark support and the `hypecut falcon` command
 camera-motion compensation (src/hypecut/camera.py and changes to
 src/hypecut/signals/visual.py, src/hypecut/snapping.py, src/hypecut/config.py),
 Falcon profiles (configs/falcon-*.yaml), CLI and web UI changes
-(src/hypecut/cli.py, src/hypecut/jobs.py, src/hypecut/web/), tests and docs.
+(src/hypecut/cli.py, src/hypecut/jobs.py, src/hypecut/web/), the Remotion
+overlay cards (overlays/, src/hypecut/overlays.py), tests and docs.
+
+Third-party software used but not redistributed here:
+
+- Remotion (https://www.remotion.dev), installed by npm into overlays/.
+  Remotion License: free (including commercial use) for individuals,
+  for-profit organisations with up to 3 employees, non-profits and
+  evaluation; larger for-profit organisations need a Remotion Company
+  License. Reselling or relicensing Remotion or a derivative is not allowed.
+  See https://www.remotion.dev/docs/license and docs/overlays.md.
+- React and React DOM (MIT), installed by npm into overlays/.
+
+Bundled fonts (overlays/public/fonts/), SIL Open Font License 1.1:
+Big Shoulders Display (Copyright 2019 The Big Shoulders Project Authors) and
+Atkinson Hyperlegible (Copyright 2020 Braille Institute of America, Inc.).
 
 XbotGo and Falcon are trademarks of their respective owner. This project is
 not affiliated with or endorsed by XbotGo.

@@ -1,0 +1,14 @@
+{
+  "team": "Test FC",
+  "player": "Test Player",
+  "number": "10",
+  "date": "Apr 25, 2026",
+  "opponent": "Sample United",
+  "accent": "#FFC41F",
+  "format": "16:9",
+  "intro": true,
+  "outro": true,
+  "lowerThird": ["clip01"],
+  "titles": {"clip02": "Goal!"},
+  "score": {"home": 2, "away": 1, "homeLabel": "TFC", "awayLabel": "SMP"}
+}
