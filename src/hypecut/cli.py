@@ -223,6 +223,9 @@ def build_parser() -> argparse.ArgumentParser:
     ev.add_argument("-q", "--quiet", action="store_true")
 
     _add_falcon_parser(sub)
+    from .overlays import add_overlays_parser
+
+    add_overlays_parser(sub)
 
     serve = sub.add_parser("serve", help="run the web UI")
     serve.add_argument("--host", default="127.0.0.1")
@@ -402,11 +405,17 @@ def _add_falcon_parser(sub) -> None:
     )
     fal.add_argument("--json", action="store_true", help="print the plan as JSON")
     fal.add_argument("-q", "--quiet", action="store_true")
+    from .overlays import add_falcon_overlay_args
+
+    add_falcon_overlay_args(fal)
 
 
 def _run_falcon(args: argparse.Namespace, report) -> int:
     from .falcon import FalconOptions, load_plan, plan_falcon, render_falcon
     from .marks import fmt_clock
+    from .overlays import apply_to_falcon_reel, check_against_plan, config_from_falcon_args
+
+    overlay_cfg = config_from_falcon_args(args)
 
     pad = args.pad if args.pad is not None else 10.0
     opts = FalconOptions(
@@ -448,6 +457,9 @@ def _run_falcon(args: argparse.Namespace, report) -> int:
     elif not args.quiet:
         _print_falcon_plan(plan, fmt_clock)
 
+    if overlay_cfg is not None:
+        check_against_plan(overlay_cfg, plan)
+
     if args.plan_only:
         path = plan.save(out_dir / "falcon_plan.json")
         if not args.quiet:
@@ -461,12 +473,25 @@ def _run_falcon(args: argparse.Namespace, report) -> int:
         return 1
 
     outputs = render_falcon(plan, out_dir, opts, progress=report, ctx=holder.get("ctx"))
+    overlaid = None
+    if overlay_cfg is not None:
+        overlaid, more = apply_to_falcon_reel(
+            overlay_cfg,
+            plan,
+            outputs.highlights,
+            outputs.clips,
+            browser=args.browser,
+            overlays_dir=args.overlays_dir,
+        )
+        outputs.notes.extend(more)
     report(1.0, "done")
     if not args.quiet:
         print()
         for note in outputs.notes:
             print(f"note: {note}")
         print(f"Reel:   {outputs.highlights}")
+        if overlaid:
+            print(f"Cards:  {overlaid}")
         if outputs.phone:
             print(f"Phone:  {outputs.phone}")
         if outputs.vertical:
@@ -927,6 +952,10 @@ def main(argv: list[str] | None = None) -> int:
             return _run_render(args, _progress(args.quiet))
         if args.command == "falcon":
             return _run_falcon(args, _progress(args.quiet))
+        if args.command == "overlays":
+            from .overlays import run_overlays_cli
+
+            return run_overlays_cli(args)
 
         cfg = _config_from_args(args)
         report = _progress(args.quiet)
