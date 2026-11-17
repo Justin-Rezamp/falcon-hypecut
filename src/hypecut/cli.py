@@ -229,6 +229,11 @@ def build_parser() -> argparse.ArgumentParser:
     serve.add_argument("--port", type=int, default=8000)
     serve.add_argument("--reload", action="store_true")
     serve.add_argument("--data-dir", default=None, help="where uploads and reels are stored")
+    serve.add_argument(
+        "--games-dir",
+        default=None,
+        help="the only folder 'pick a game already on this computer' reads (default ./games)",
+    )
 
     return parser
 
@@ -893,6 +898,8 @@ def main(argv: list[str] | None = None) -> int:
 
         if args.data_dir:
             os.environ["HYPECUT_DATA_DIR"] = args.data_dir
+        if args.games_dir:
+            os.environ["HYPECUT_GAMES_DIR"] = args.games_dir
         uvicorn.run("hypecut.web.app:app", host=args.host, port=args.port, reload=args.reload)
         return 0
 

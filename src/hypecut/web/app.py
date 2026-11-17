@@ -8,6 +8,10 @@ Endpoints
 ``GET  /api/jobs/{id}/reel``  the rendered mp4
 ``GET  /api/jobs/{id}/plan``  the JSON cut list
 ``GET  /api/jobs/{id}/clip/{n}``  clip ``n`` (1-based) of a Falcon job
+``GET  /api/games``           games already on this computer (under the games folder)
+``POST /api/games/plan``      plan a game from the games folder (cuts nothing)
+``POST /api/jobs/{id}/render``  build the reel from a reviewed plan (keep/drop per clip)
+``GET  /api/jobs/{id}/thumb/{clip}``  a small JPEG frame at a clip's first tap
 ``GET  /api/meta``            registered signals, refiners and limits
 ``GET  /login?token=...``     sets the session cookie when HYPECUT_TOKEN is configured
 
@@ -33,8 +37,10 @@ from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field
 
 from .. import __version__
+from .. import ffmpeg as ff
 from ..cli import VARIANT_PRESETS
 from ..config import describe_profiles
 from ..jobs import JobStore
@@ -60,6 +66,10 @@ def _default_profiles_dir() -> Path:
 
 
 PROFILES_DIR = Path(os.environ.get("HYPECUT_PROFILES_DIR") or _default_profiles_dir())
+#: The only folder "Pick a game already on this computer" may read from.
+GAMES_DIR = Path(os.environ.get("HYPECUT_GAMES_DIR", "./games")).resolve()
+#: How deep under GAMES_DIR to look (games/<date>/video.mp4 is depth 2).
+GAMES_MAX_DEPTH = 3
 TOKEN = os.environ.get("HYPECUT_TOKEN", "").strip()
 TOKEN_COOKIE = "hypecut_token"
 PUBLIC_PATHS = {"/api/meta", "/login"}
@@ -162,6 +172,7 @@ def meta() -> dict[str, Any]:
         # "football, basketball, broadcast coverage" instead of a filename.
         "profiles": describe_profiles(PROFILES_DIR) if PROFILES_DIR.is_dir() else [],
         "falcon_modes": list(FALCON_MODES),
+        "games_folder": GAMES_DIR.name,
     }
 
 
@@ -189,6 +200,8 @@ async def create_job(
     falcon_extras: int = Form(0, ge=0, le=20),
     falcon_phone: bool = Form(False),
     falcon_vertical: bool = Form(False),
+    # Review flow: plan the Falcon clips and stop, so the parent can keep/drop first.
+    plan_only: bool = Form(False),
 ) -> JSONResponse:
     suffix = Path(file.filename or "").suffix.lower()
     if marks is not None and not (marks.filename or ""):
@@ -286,8 +299,200 @@ async def create_job(
             if profile_path and "falcon" in Path(profile_path).stem
             else None,
         }
-    job = store.submit(safe_name, dest, options)
+    stage = "plan" if plan_only and "falcon" in options else ""
+    job = store.submit(safe_name, dest, options, stage=stage)
     return JSONResponse({"id": job.id, "status": job.status.value}, status_code=202)
+
+
+# ------------------------------------------------------------- local games
+
+
+class GamePlanRequest(BaseModel):
+    game: str = Field(..., min_length=1, max_length=1024)
+    mark: str | None = Field(None, max_length=1024)
+    mode: str = "marks"
+    pad: float = Field(10.0, ge=0, le=120)
+
+
+class RenderRequest(BaseModel):
+    keep: list[str] = Field(..., max_length=1000)
+    phone: bool = False
+    vertical: bool = False
+    loudnorm: bool = False
+
+
+def _inside_games(path: Path) -> bool:
+    try:
+        path.resolve().relative_to(GAMES_DIR)
+    except (ValueError, OSError):
+        return False
+    return True
+
+
+def _resolve_game_file(rel: str, suffixes: set[str]) -> Path:
+    """Map a games-folder relative path from the browser to a real file, or refuse.
+
+    Only paths the listing itself could have produced are accepted: relative,
+    no ``..`` parts, inside GAMES_DIR after resolving symlinks, an existing file
+    with an allowed suffix. Anything else is the same 404, so a probe learns nothing.
+    """
+    missing = HTTPException(status_code=404, detail="No such game in the games folder")
+    rel = rel.replace("\\", "/")
+    parts = [p for p in rel.split("/") if p not in ("", ".")]
+    if not parts or rel.startswith("/") or ":" in rel or any(p == ".." for p in parts):
+        raise missing
+    candidate = GAMES_DIR.joinpath(*parts)
+    if not _inside_games(candidate) or not candidate.is_file():
+        raise missing
+    if candidate.suffix.lower() not in suffixes:
+        raise missing
+    return candidate.resolve()
+
+
+def _rel(path: Path) -> str:
+    return path.resolve().relative_to(GAMES_DIR).as_posix()
+
+
+def _mark_summary(path: Path, video: Path) -> dict[str, Any] | None:
+    try:
+        if path.stat().st_size > MAX_MARK_BYTES:
+            return None
+        marks = parse_marks(json.loads(path.read_text(encoding="utf-8-sig")))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, MarkFileError):
+        return None
+    return {
+        "path": _rel(path),
+        "name": path.name,
+        "taps": len(marks),
+        "same_name": path.stem.lower() in (video.stem.lower(), video.name.lower()),
+    }
+
+
+def scan_games() -> list[dict[str, Any]]:
+    """Videos under GAMES_DIR with the .mark files that could belong to each.
+
+    A Falcon .mark is usually named after the camera's recording
+    (VID_20260425_133314_01_01.mark), not the video the parent saved, so every
+    readable .mark in the video's folder and its hidden .data folder is offered,
+    same-name matches first. Nothing outside GAMES_DIR is ever listed.
+    """
+    if not GAMES_DIR.is_dir():
+        return []
+    games: list[dict[str, Any]] = []
+    for dirpath, dirnames, filenames in os.walk(GAMES_DIR, followlinks=False):
+        here = Path(dirpath)
+        depth = len(here.relative_to(GAMES_DIR).parts)
+        # Skip hidden folders (except .data, read per video below) and our own outputs.
+        dirnames[:] = sorted(
+            d for d in dirnames if not d.startswith(".") and not d.endswith("_highlights")
+        )
+        if depth >= GAMES_MAX_DEPTH:
+            dirnames[:] = []
+        videos = sorted(
+            here / f
+            for f in filenames
+            if Path(f).suffix.lower() in ALLOWED_SUFFIXES and not f.startswith(".")
+        )
+        if not videos:
+            continue
+        mark_files = [
+            p
+            for folder in (here, here / ".data")
+            if folder.is_dir() and _inside_games(folder)
+            for p in sorted(folder.iterdir())
+            if p.suffix.lower() == ".mark" and p.is_file() and _inside_games(p)
+        ]
+        for video in videos:
+            if not _inside_games(video):
+                continue  # a symlink pointing out of the games folder
+            marks = [m for m in (_mark_summary(p, video) for p in mark_files) if m]
+            marks.sort(key=lambda m: (not m["same_name"], m["name"]))
+            games.append(
+                {
+                    "path": _rel(video),
+                    "name": video.name,
+                    "folder": _rel(here) if here != GAMES_DIR else "",
+                    "size": video.stat().st_size,
+                    "marks": marks,
+                }
+            )
+    return games
+
+
+@app.get("/api/games")
+def list_games() -> dict[str, Any]:
+    return {"root": GAMES_DIR.name, "games": scan_games()}
+
+
+@app.post("/api/games/plan")
+def plan_local_game(req: GamePlanRequest) -> JSONResponse:
+    mode = req.mode.strip().lower()
+    if mode not in FALCON_MODES:
+        raise HTTPException(
+            status_code=422, detail=f"Unknown mode {mode!r}; expected {FALCON_MODES}"
+        )
+    video = _resolve_game_file(req.game, ALLOWED_SUFFIXES)
+    mark_path = _resolve_game_file(req.mark, {".mark"}) if req.mark else None
+    if mode in ("marks", "hybrid") and mark_path is None:
+        raise HTTPException(status_code=422, detail=f"{mode!r} needs a .mark file")
+    if mark_path is not None and _mark_summary(mark_path, video) is None:
+        raise HTTPException(status_code=422, detail="Could not read that .mark file")
+    options = {
+        "falcon": {
+            "mode": mode,
+            "marks": str(mark_path) if mark_path else None,
+            "pad": req.pad,
+            "extras": 0,
+            "phone": False,
+            "vertical": False,
+            "profile": None,
+        }
+    }
+    job = store.submit(video.name, video, options, local_source=True, stage="plan")
+    return JSONResponse({"id": job.id, "status": job.status.value}, status_code=202)
+
+
+@app.post("/api/jobs/{job_id}/render")
+def render_job(job_id: str, req: RenderRequest) -> JSONResponse:
+    try:
+        job = store.render(
+            job_id,
+            set(req.keep),
+            {"phone": req.phone, "vertical": req.vertical, "loudnorm": req.loudnorm},
+        )
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Unknown job") from None
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
+    return JSONResponse({"id": job.id, "status": job.status.value}, status_code=202)
+
+
+@app.get("/api/jobs/{job_id}/thumb/{clip_id}")
+def clip_thumb(job_id: str, clip_id: str) -> FileResponse:
+    """One small frame at the clip's first tap (or its middle), cached per job."""
+    job = store.get(job_id)
+    clips = (job.plan or {}).get("clips", []) if job else []
+    clip = next((c for c in clips if c.get("id") == clip_id), None)
+    if job is None or clip is None or not Path(job.source).is_file():
+        raise HTTPException(status_code=404, detail="No such clip")
+    folder = store.outputs / job.id / "thumbs"
+    dest = folder / f"{clip['id']}.jpg"
+    if not dest.exists():
+        folder.mkdir(parents=True, exist_ok=True)
+        at = clip["marks"][0] if clip.get("marks") else (clip["start"] + clip["end"]) / 2
+        try:
+            ff.run(
+                ff.cmd(
+                    "ffmpeg -hide_banner -loglevel error -y -ss {at} -i {src} -frames:v 1 "
+                    "-vf scale=480:-2 -q:v 6 {dest}",
+                    at=f"{max(0.0, float(at)):.3f}",
+                    src=job.source,
+                    dest=str(dest),
+                )
+            )
+        except (ff.FFmpegError, OSError):
+            raise HTTPException(status_code=404, detail="Could not read a frame") from None
+    return FileResponse(dest, media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
 
 
 @app.get("/api/jobs")
