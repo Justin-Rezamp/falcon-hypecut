@@ -55,6 +55,12 @@ class Job:
     plan: dict[str, Any] | None = None
     error: str | None = None
     options: dict[str, Any] = field(default_factory=dict)
+    #: The source (and its .mark) belong to the user — a game picked from the
+    #: games folder — so no cleanup path may ever delete them.
+    local_source: bool = False
+    #: Falcon review flow: "plan" (cut nothing yet), "planned" (waiting for the
+    #: parent to press build), "render", or "" for the one-shot flow.
+    stage: str = ""
 
     def public(self) -> dict[str, Any]:
         data = asdict(self)
@@ -68,6 +74,14 @@ class Job:
         data["variants"] = sorted(self.variants)
         # File names (not paths) of a Falcon job's clips; fetched by index.
         data["clips"] = [Path(c).name for c in self.clips]
+        data.pop("local_source", None)
+        if self.plan:
+            # The plan records server-side paths; the browser needs none of them.
+            data["plan"] = {
+                k: v
+                for k, v in self.plan.items()
+                if k not in ("source", "mark_file", "analysis_source")
+            }
         falcon = (self.options or {}).get("falcon")
         if falcon:
             # The uploaded .mark lives at a server path; say only that it exists.
@@ -115,8 +129,23 @@ class JobStore:
 
     # ---------------------------------------------------------------- public
 
-    def submit(self, filename: str, source: Path, options: dict[str, Any]) -> Job:
-        job = Job(id=uuid.uuid4().hex[:12], filename=filename, source=str(source), options=options)
+    def submit(
+        self,
+        filename: str,
+        source: Path,
+        options: dict[str, Any],
+        *,
+        local_source: bool = False,
+        stage: str = "",
+    ) -> Job:
+        job = Job(
+            id=uuid.uuid4().hex[:12],
+            filename=filename,
+            source=str(source),
+            options=options,
+            local_source=local_source,
+            stage=stage,
+        )
         with self._lock:
             self._jobs[job.id] = job
             self._order.append(job.id)
@@ -132,6 +161,37 @@ class JobStore:
         with self._lock:
             ids = self._order[-limit:][::-1]
             return [self._jobs[i] for i in ids if i in self._jobs]
+
+    def render(self, job_id: str, keep: set[str], exports: dict[str, bool]) -> Job:
+        """Queue the cut for a reviewed Falcon plan: only ``keep`` clip IDs go in."""
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if job is None:
+                raise KeyError(job_id)
+            if job.stage != "planned" or job.status is not JobStatus.DONE or not job.plan:
+                raise ValueError("This job has no reviewed plan waiting to be built")
+            ids = {c["id"] for c in job.plan.get("clips", [])}
+            unknown = sorted(keep - ids)
+            if unknown:
+                raise ValueError(f"Unknown clip id(s): {', '.join(unknown)}")
+            if not keep:
+                raise ValueError("Keep at least one clip to build a reel")
+            if not Path(job.source).is_file():
+                raise ValueError("The game video is no longer available; pick or upload it again")
+            for clip in job.plan["clips"]:
+                clip["keep"] = clip["id"] in keep
+            job.plan["reel_duration"] = round(
+                sum(c["end"] - c["start"] for c in job.plan["clips"] if c["keep"]), 3
+            )
+            job.options["falcon"] = {**job.options["falcon"], **exports}
+            job.stage = "render"
+            job.status = JobStatus.QUEUED
+            job.progress = 0.0
+            job.message = "queued to build"
+            job.error = None
+            job.finished_at = None
+        self._queue.put(job.id)
+        return job
 
     def cancel(self, job_id: str) -> bool:
         with self._lock:
@@ -158,7 +218,7 @@ class JobStore:
                 continue
             job = self.get(job_id)
             if job is None or job.status is JobStatus.CANCELLED:
-                if job is not None and not self._keep_uploads:
+                if job is not None and self._may_delete_source(job):
                     Path(job.source).unlink(missing_ok=True)
                 self._queue.task_done()
                 continue
@@ -171,7 +231,9 @@ class JobStore:
                 job.error = job.error or "internal error"
                 job.finished_at = time.time()
             finally:
-                if not self._keep_uploads and job.status in (JobStatus.DONE, JobStatus.FAILED):
+                finished = job.status in (JobStatus.DONE, JobStatus.FAILED)
+                # A planned job keeps its upload: the parent still has to press build.
+                if finished and job.stage != "planned" and self._may_delete_source(job):
                     Path(job.source).unlink(missing_ok=True)
                 self._queue.task_done()
 
@@ -249,7 +311,7 @@ class JobStore:
 
     def _process_falcon(self, job: Job, progress) -> None:
         """XbotGo Falcon job: marks / hybrid / detect, clips plus a reel."""
-        from .falcon import FalconOptions, plan_falcon, render_falcon
+        from .falcon import FalconOptions, plan_falcon, plan_from_dict, render_falcon
 
         opts_in = job.options["falcon"]
         pad = float(opts_in.get("pad", 10.0))
@@ -265,14 +327,27 @@ class JobStore:
             cache_dir=str(self.data_dir / "proxies"),
         )
         holder: dict[str, Any] = {}
-        plan = plan_falcon(
-            job.source,
-            marks=opts_in.get("marks"),
-            options=opts,
-            progress=lambda p, m: progress(p * 0.4, m),
-            _ctx_out=holder,
-        )
-        job.plan = plan.to_dict()
+        if job.stage == "render" and job.plan:
+            plan = plan_from_dict(job.plan)
+            plan.source = job.source
+            opts.loudnorm = bool(opts_in.get("loudnorm"))
+            base = 0.0
+        else:
+            plan = plan_falcon(
+                job.source,
+                marks=opts_in.get("marks"),
+                options=opts,
+                progress=lambda p, m: progress(p * (1.0 if job.stage == "plan" else 0.4), m),
+                _ctx_out=holder,
+            )
+            job.plan = plan.to_dict()
+            base = 0.4
+            if job.stage == "plan":
+                job.stage = "planned"
+                job.status = JobStatus.DONE
+                job.progress = 1.0
+                job.message = f"{len(plan.kept)} clips planned — nothing cut yet"
+                return
         if not plan.kept:
             job.status = JobStatus.DONE
             job.progress = 1.0
@@ -282,7 +357,7 @@ class JobStore:
             plan,
             self.outputs / job.id,
             opts,
-            progress=lambda p, m: progress(0.4 + p * 0.6, m),
+            progress=lambda p, m: progress(base + p * (1.0 - base), m),
             ctx=holder.get("ctx"),
         )
         job.output = str(out.highlights)
@@ -297,10 +372,14 @@ class JobStore:
         job.status = JobStatus.DONE
         job.progress = 1.0
         job.message = f"{len(out.clips)} clips ready"
-        if opts_in.get("marks") and not self._keep_uploads:
+        job.stage = "built" if job.stage == "render" else job.stage
+        if opts_in.get("marks") and self._may_delete_source(job):
             Path(opts_in["marks"]).unlink(missing_ok=True)
 
     # ---------------------------------------------------------------- private
+
+    def _may_delete_source(self, job: Job) -> bool:
+        return not job.local_source and not self._keep_uploads
 
     def _maybe_sweep(self, every: float = 60.0) -> None:
         now = time.time()
@@ -327,11 +406,14 @@ class JobStore:
         if job is None:
             return
         # Every reel part (not only the first), variants, and sidecars named after the job id.
-        paths = {job.source, job.output, *job.parts, *job.variants.values()}
+        paths = {job.output, *job.parts, *job.variants.values()}
         paths.update(str(p) for p in self.outputs.glob(f"{job.id}*") if p.is_file())
         falcon = (job.options or {}).get("falcon") or {}
-        if falcon.get("marks"):
-            paths.add(str(falcon["marks"]))
+        if not job.local_source:
+            # A game picked from the games folder is the user's own file: never delete it.
+            paths.add(job.source)
+            if falcon.get("marks"):
+                paths.add(str(falcon["marks"]))
         for path in paths:
             if path:
                 Path(path).unlink(missing_ok=True)

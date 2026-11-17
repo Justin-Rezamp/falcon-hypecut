@@ -66,6 +66,7 @@ __all__ = [
     "plan_falcon",
     "render_falcon",
     "load_plan",
+    "plan_from_dict",
 ]
 
 MODES = ("marks", "hybrid", "detect")
@@ -301,6 +302,13 @@ def load_plan(path: str | Path) -> FalconPlan:
     data = json.loads(Path(path).read_text(encoding="utf-8"))
     if not isinstance(data, dict) or data.get("falcon_plan") != 1:
         raise ValueError(f"{path} is not a Falcon plan (expected a falcon_plan.json)")
+    return plan_from_dict(data)
+
+
+def plan_from_dict(data: dict[str, Any]) -> FalconPlan:
+    """Rebuild a plan from :meth:`FalconPlan.to_dict` output (the web UI keeps it in memory)."""
+    if not isinstance(data, dict) or data.get("falcon_plan") != 1:
+        raise ValueError("not a Falcon plan")
     clips = [FalconClip.from_dict(c) for c in data.get("clips", [])]
     for c in clips:
         if c.end <= c.start:
