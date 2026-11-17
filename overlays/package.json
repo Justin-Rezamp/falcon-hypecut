@@ -1,0 +1,23 @@
+{
+  "name": "falcon-overlays",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Remotion title cards and lower-thirds for Falcon highlight reels",
+  "license": "Apache-2.0",
+  "scripts": {
+    "studio": "remotion studio src/index.ts",
+    "compositions": "remotion compositions src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.544",
+    "@remotion/renderer": "4.0.544",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "remotion": "4.0.544"
+  },
+  "devDependencies": {
+    "@types/react": "19.1.8",
+    "typescript": "5.8.3"
+  }
+}
