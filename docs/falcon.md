@@ -82,11 +82,26 @@ hypecut falcon --from-plan "$HOME\Videos\Falcon\game_highlights\falcon_plan.json
 ### Or use the web page
 
 ```powershell
-hypecut serve      # then open http://127.0.0.1:8000
+hypecut serve --games-dir .\games     # then open http://127.0.0.1:8000
 ```
 
-Drop the MP4, click **Add .mark file**, pick **Just my taps** or
-**Taps + smart edges**, and press the button. Each clip is downloadable by name.
+Four steps, built for a phone as much as a laptop:
+
+1. **Choose the game.** *On this computer* lists every video under the games
+   folder (default `./games`, e.g. `games\20260425\Your_Video_File.mp4`), so a
+   20 GB game is never uploaded twice. Only that folder is readable: paths are
+   relative, `..` and symlinks out of it are refused. *Upload from this device*
+   is still there.
+2. **Your taps.** Pick the `.mark` (the page offers every readable `.mark` in
+   the video's folder and its hidden `.data` folder, same-name first — the
+   Falcon names them after the recording, not your file). Choose **Just my
+   taps**, **Taps + smart edges** (shifted edges are labelled *inferred*) or
+   **No taps**. **Find my clips** plans only; nothing is cut.
+3. **Review clips.** One card per clip: ID, tap time(s), start–end, a frame
+   from the first tap, a *Merged* badge, and a Keep/Dropped toggle. The reel
+   length updates as you go.
+4. **Build reel.** Optional phone copy (1080p), vertical 9:16 and even loudness,
+   then **Build my reel**. Download the reel or any single clip by name.
 
 ---
 
