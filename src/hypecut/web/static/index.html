@@ -2,447 +2,630 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>HypeCut — auto highlight reels</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="color-scheme" content="light dark" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2314213d'/%3E%3Cpath d='M9 23V9h12M9 16h9' stroke='%23f3efe6' stroke-width='4' fill='none'/%3E%3C/svg%3E" />
+<title>Falcon Highlights</title>
+<link rel="preload" href="/static/fonts/big-shoulders-display.woff2" as="font" type="font/woff2" crossorigin />
+<link rel="preload" href="/static/fonts/atkinson-400.woff2" as="font" type="font/woff2" crossorigin />
 <style>
-  :root {
-    --bg: #0c0e13;
-    --panel: #141822;
-    --panel-2: #1b202c;
-    --line: #262d3b;
-    --text: #e8ecf4;
-    --muted: #8e98ad;
-    --accent: #ff5b4a;
-    --accent-2: #4ad9c0;
-    --radius: 12px;
-    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+@font-face { font-family: "Shoulders"; src: url(/static/fonts/big-shoulders-display.woff2) format("woff2"); font-weight: 100 900; font-display: swap; }
+@font-face { font-family: "Atkinson"; src: url(/static/fonts/atkinson-400.woff2) format("woff2"); font-weight: 400; font-display: swap; }
+@font-face { font-family: "Atkinson"; src: url(/static/fonts/atkinson-700.woff2) format("woff2"); font-weight: 700; font-display: swap; }
+
+/* Kit room: washed kit cotton by day, the team bus at night. One action colour
+   (training-cone orange) and it only ever sits on something you can press. */
+:root {
+  --ground: #f3efe6;
+  --surface: #fffdf8;
+  --sunk: #e9e3d6;
+  --ink: #14213d;
+  --ink-2: #4a5470;
+  --line: #d6cebd;
+  --navy: #14213d;
+  --on-navy: #f3efe6;
+  --cone: #b8410c;
+  --cone-hover: #9a360a;
+  --on-cone: #ffffff;
+  --kept: #1d6b46;
+  --guess: #8a5300;
+  --guess-bg: #f7e7c6;
+  --bad: #a3231c;
+  --focus: #1f5fd1;
+  --radius: 14px;
+  --sans: "Atkinson", system-ui, sans-serif;
+  --num: "Shoulders", "Atkinson", sans-serif;
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.06), 0 6px 18px -8px rgb(0 0 0 / 0.2);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground: #0e1524; --surface: #162036; --sunk: #0b111d; --ink: #eef0f4; --ink-2: #aeb7cc;
+    --line: #2b3858; --navy: #22325a; --on-navy: #eef0f4; --cone: #ff8a4c; --cone-hover: #ffa06d;
+    --on-cone: #1b0b02; --kept: #5fd39a; --guess: #f2c26b; --guess-bg: #3a2c12; --bad: #ff8a80;
+    --focus: #8ab4ff; --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 8px 22px -10px rgb(0 0 0 / 0.6);
+    color-scheme: dark;
   }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0; background: var(--bg); color: var(--text);
-    font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans TC", sans-serif;
-  }
-  header {
-    padding: 28px 24px 16px; max-width: 900px; margin: 0 auto;
-    display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
-  }
-  h1 { font-size: 24px; margin: 0; letter-spacing: -0.02em; }
-  h1 span { color: var(--accent); }
-  .tag {
-    font: 600 11px/1 var(--mono); text-transform: uppercase; letter-spacing: .08em;
-    color: var(--muted); border: 1px solid var(--line); padding: 5px 8px; border-radius: 999px;
-  }
-  main { max-width: 900px; margin: 0 auto; padding: 0 24px 80px; }
-  .card {
-    background: var(--panel); border: 1px solid var(--line);
-    border-radius: var(--radius); padding: 22px; margin-bottom: 18px;
-  }
-  #drop {
-    border: 1.5px dashed var(--line); border-radius: var(--radius);
-    padding: 46px 20px; text-align: center; cursor: pointer;
-    transition: border-color .15s, background .15s;
-  }
-  #drop.hot { border-color: var(--accent); background: #ff5b4a10; }
-  #drop strong { display: block; font-size: 18px; margin-bottom: 6px; }
-  #drop small { color: var(--muted); }
-  .file { margin-top: 12px; font: 13px var(--mono); color: var(--accent-2); word-break: break-all; }
-  .ask { font-size: 14px; color: var(--text); margin: 22px 0 8px; font-weight: 600; }
-  .hint { font-size: 13px; color: var(--muted); margin: -4px 0 8px; }
-  label { display: block; font-size: 12px; color: var(--muted); margin: 14px 0 6px; }
-  input[type=range] { width: 100%; accent-color: var(--accent); }
-  .row { display: flex; gap: 14px; }
-  .row > div { flex: 1; }
-  .val { font: 600 13px var(--mono); color: var(--text); float: right; }
-  .chips { display: flex; gap: 8px; flex-wrap: wrap; }
-  .chip {
-    border: 1px solid var(--line); border-radius: 999px; padding: 8px 14px;
-    font-size: 14px; cursor: pointer; user-select: none; background: var(--panel-2);
-  }
-  .chip.on { border-color: var(--accent-2); color: var(--accent-2); }
-  button {
-    margin-top: 24px; width: 100%; padding: 15px 16px; border: 0; border-radius: 10px;
-    background: var(--accent); color: #fff; font-size: 16px; font-weight: 600; cursor: pointer;
-  }
-  button:disabled { opacity: .45; cursor: not-allowed; }
-  details { margin-top: 22px; border-top: 1px solid var(--line); padding-top: 14px; }
-  summary { cursor: pointer; color: var(--muted); font-size: 13px; user-select: none; }
-  summary::marker { color: var(--muted); }
-  .bar { height: 8px; background: var(--panel-2); border-radius: 999px; overflow: hidden; }
-  .bar > i { display: block; height: 100%; width: 0;
-    background: linear-gradient(90deg, var(--accent), var(--accent-2)); transition: width .3s; }
-  .status { display: flex; justify-content: space-between; font-size: 14px;
-    color: var(--muted); margin-bottom: 8px; }
-  .part { margin-top: 22px; }
-  .part h3 { font-size: 14px; margin: 0 0 4px; }
-  .part .sub { font-size: 13px; color: var(--muted); }
-  .nothing {
-    border: 1px solid var(--line); border-radius: var(--radius);
-    padding: 20px; margin-top: 16px; font-size: 15px;
-  }
-  .nothing p { margin: 0 0 8px; }
-  .nothing small { color: var(--muted); }
-  video { width: 100%; max-height: 52vh; object-fit: contain;
-    border-radius: 10px; margin-top: 10px; background: #000; }
-  a.dl { display: inline-block; margin-top: 10px; margin-right: 14px;
-    color: var(--accent-2); font-size: 14px; }
-  .err { color: var(--accent); font-size: 14px; white-space: pre-wrap; margin-top: 12px; }
-  .clip {
-    display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center;
-    padding: 9px 0; border-bottom: 1px solid var(--line); font-size: 14px;
-  }
-  .clip:last-child { border-bottom: 0; }
-  .clip .idx { font: 600 12px var(--mono); color: var(--muted); width: 22px; }
-  .clip .why { font-size: 12px; color: var(--muted); }
-  .clip .sc { font: 600 12px var(--mono); color: var(--accent-2); }
-  .empty { color: var(--muted); font-size: 14px; }
-  footer { max-width: 900px; margin: 0 auto; padding: 0 24px 40px;
-    color: var(--muted); font-size: 13px; }
-  code { font: 12px var(--mono); background: var(--panel-2); padding: 2px 6px; border-radius: 5px; }
+}
+:root[data-theme="dark"] {
+  --ground: #0e1524; --surface: #162036; --sunk: #0b111d; --ink: #eef0f4; --ink-2: #aeb7cc;
+  --line: #2b3858; --navy: #22325a; --on-navy: #eef0f4; --cone: #ff8a4c; --cone-hover: #ffa06d;
+  --on-cone: #1b0b02; --kept: #5fd39a; --guess: #f2c26b; --guess-bg: #3a2c12; --bad: #ff8a80;
+  --focus: #8ab4ff; --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 8px 22px -10px rgb(0 0 0 / 0.6);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; scrollbar-color: var(--line) var(--ground); }
+body { margin: 0; background: var(--ground); color: var(--ink); font: 17px/1.5 var(--sans); }
+::selection { background: var(--cone); color: var(--on-cone); }
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; border-radius: 6px; }
+a { color: inherit; text-underline-offset: 3px; }
+button, input, select { font: inherit; color: inherit; }
+.vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.num { font-family: var(--num); font-variant-numeric: tabular-nums; letter-spacing: 0.01em; }
+.tab { font-variant-numeric: tabular-nums; }
+
+/* Shell */
+.top { background: var(--navy); color: var(--on-navy); }
+.top-in { max-width: 1120px; margin: 0 auto; padding: 14px 20px; display: flex; align-items: center; gap: 14px; }
+.brand { font: 800 26px/1 var(--num); letter-spacing: 0.02em; text-transform: uppercase; margin: 0; }
+.local { font-size: 14px; opacity: .85; margin-left: auto; display: flex; align-items: center; gap: 8px; }
+.local svg { flex: none; }
+.theme { background: none; border: 1px solid rgb(255 255 255 / .35); color: inherit; border-radius: 999px;
+  min-width: 44px; min-height: 44px; display: grid; place-items: center; cursor: pointer; }
+
+.steps { max-width: 1120px; margin: 0 auto; padding: 18px 20px 0; list-style: none; display: grid;
+  grid-template-columns: repeat(4, 1fr); gap: 8px; counter-reset: s; }
+.steps li { counter-increment: s; display: flex; align-items: center; gap: 10px; font-size: 15px; color: var(--ink-2);
+  padding: 10px 0 12px; border-bottom: 3px solid var(--line); }
+.steps li::before { content: counter(s); font: 800 22px/1 var(--num); width: 34px; height: 34px; flex: none;
+  display: grid; place-items: center; border-radius: 50%; border: 2px solid var(--line); color: var(--ink-2); }
+.steps li[data-state="done"] { color: var(--ink); border-color: var(--kept); }
+.steps li[data-state="done"]::before { background: var(--kept); border-color: var(--kept); color: var(--surface); }
+.steps li[aria-current="step"] { color: var(--ink); font-weight: 700; border-color: var(--cone); }
+.steps li[aria-current="step"]::before { border-color: var(--cone); color: var(--cone); }
+
+main { max-width: 1120px; margin: 0 auto; padding: 8px 20px 140px; }
+section.step { margin-top: 26px; }
+section.step[hidden] { display: none; }
+h2 { font: 800 34px/1.05 var(--num); text-transform: uppercase; letter-spacing: 0.01em; margin: 0 0 6px; text-wrap: balance; }
+.lede { color: var(--ink-2); margin: 0 0 18px; max-width: 62ch; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; }
+
+/* Source choice */
+.choice { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.opt { display: block; border: 2px solid var(--line); border-radius: var(--radius); padding: 16px 18px; background: var(--surface);
+  cursor: pointer; min-height: 44px; }
+.opt:has(input:checked) { border-color: var(--ink); box-shadow: var(--shadow); }
+.opt:has(input:focus-visible) { outline: 3px solid var(--focus); outline-offset: 3px; }
+.opt input { position: absolute; opacity: 0; }
+.opt b { display: block; font-size: 18px; }
+.opt span { color: var(--ink-2); font-size: 15px; }
+
+.list { list-style: none; margin: 14px 0 0; padding: 0; display: grid; gap: 8px; }
+.row { display: flex; align-items: center; gap: 14px; padding: 12px 14px; border: 1px solid var(--line);
+  border-radius: 12px; background: var(--surface); cursor: pointer; min-height: 56px; }
+.row:hover { border-color: var(--ink-2); }
+.row:has(input:checked) { border-color: var(--ink); background: var(--sunk); }
+.row:has(input:focus-visible) { outline: 3px solid var(--focus); outline-offset: 2px; }
+.row input { accent-color: var(--ink); width: 22px; height: 22px; flex: none; margin: 0; }
+.row .what { flex: 1; min-width: 0; }
+.row .what b { display: block; overflow-wrap: anywhere; }
+.row .what small { color: var(--ink-2); font-size: 14px; }
+.pill { font-size: 13px; font-weight: 700; padding: 3px 9px; border-radius: 999px; background: var(--sunk); color: var(--ink-2); white-space: nowrap; }
+.pill.ok { background: color-mix(in srgb, var(--kept) 16%, transparent); color: var(--kept); }
+.pill.guess { background: var(--guess-bg); color: var(--guess); }
+.empty { color: var(--ink-2); padding: 14px; border: 1px dashed var(--line); border-radius: 12px; margin-top: 14px; }
+.empty code { font-size: 14px; background: var(--sunk); padding: 1px 6px; border-radius: 6px; }
+
+.drop { margin-top: 14px; border: 2px dashed var(--line); border-radius: var(--radius); padding: 26px 18px; text-align: center;
+  background: var(--surface); }
+.drop.hot { border-color: var(--cone); }
+.filebtn { display: inline-flex; align-items: center; gap: 8px; min-height: 48px; padding: 0 18px; border-radius: 12px;
+  border: 2px solid var(--ink); background: transparent; cursor: pointer; font-weight: 700; }
+.filebtn:hover { background: var(--sunk); }
+.picked { margin-top: 10px; font-size: 15px; color: var(--ink-2); overflow-wrap: anywhere; }
+
+fieldset.seg { padding: 0; margin-inline: 0; min-width: 0; }
+.seg { display: inline-grid; grid-auto-flow: column; border: 2px solid var(--ink); border-radius: 12px; overflow: hidden; margin-top: 18px; }
+.seg label { min-height: 48px; padding: 10px 16px; display: grid; align-content: center; cursor: pointer; font-weight: 700; font-size: 15px; }
+.seg label + label { border-left: 2px solid var(--ink); }
+.seg input { position: absolute; opacity: 0; }
+.seg label:has(input:checked) { background: var(--ink); color: var(--surface); }
+.seg label:has(input:focus-visible) { outline: 3px solid var(--focus); outline-offset: -5px; }
+.seg small { font-weight: 400; font-size: 13px; opacity: .85; }
+
+/* Primary action */
+.go { display: inline-flex; align-items: center; justify-content: center; gap: 10px; min-height: 58px; padding: 0 28px;
+  border: 0; border-radius: 14px; background: var(--cone); color: var(--on-cone); font-weight: 700; font-size: 19px;
+  cursor: pointer; transition: background .15s ease-out, transform .15s ease-out; }
+.go:hover { background: var(--cone-hover); }
+.go:active { transform: translateY(1px); }
+.go:disabled { background: var(--sunk); color: var(--ink-2); cursor: not-allowed; }
+.actions { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-top: 22px; }
+.actions .note { color: var(--ink-2); font-size: 15px; }
+.ghost { min-height: 44px; padding: 0 14px; border: 1px solid var(--line); background: var(--surface); border-radius: 10px; cursor: pointer; font-size: 15px; }
+.ghost:hover { border-color: var(--ink-2); }
+.err { color: var(--bad); font-weight: 700; margin-top: 12px; white-space: pre-wrap; }
+.err:empty { display: none; }
+
+/* Status */
+.status { margin-top: 18px; }
+.status[hidden] { display: none; }
+.status-line { display: flex; align-items: baseline; gap: 14px; }
+.status-pct { font: 800 44px/1 var(--num); min-width: 3ch; }
+.status-msg { font-size: 17px; }
+.track { height: 10px; border-radius: 999px; background: var(--sunk); overflow: hidden; margin-top: 10px; }
+.track > i { display: block; height: 100%; width: 0; background: var(--ink); transition: width .4s cubic-bezier(.16,1,.3,1); }
+
+/* Review */
+.tally { position: sticky; top: 0; z-index: 5; background: var(--ground); padding: 12px 0; margin: 0 0 6px;
+  border-bottom: 1px solid var(--line); display: grid; grid-template-columns: auto 1fr auto; gap: 18px; align-items: center; }
+.tally .big { font: 800 40px/1 var(--num); }
+.tally small { display: block; color: var(--ink-2); font-size: 14px; }
+.rail { position: relative; height: 42px; border-radius: 8px; background: var(--sunk); overflow: hidden; }
+.rail i { position: absolute; top: 5px; bottom: 17px; background: var(--ink); border-radius: 3px; min-width: 3px; }
+.rail i.off { background: var(--line); }
+.rail b { position: absolute; bottom: 3px; font: 700 11px/1 var(--sans); color: var(--ink-2); font-variant-numeric: tabular-nums;
+  border-left: 1px solid var(--line); padding-left: 4px; }
+.bulk { display: flex; gap: 8px; }
+
+.clips { list-style: none; margin: 14px 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+.clip { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden;
+  display: grid; grid-template-rows: auto 1fr; transition: opacity .2s ease-out; }
+.clip[data-keep="false"] { opacity: .62; }
+.clip[data-keep="false"] .shot img { filter: grayscale(1); }
+.shot { position: relative; aspect-ratio: 16 / 9; background: var(--sunk); }
+.shot img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.shirt { position: absolute; left: 10px; bottom: 8px; font: 900 54px/0.85 var(--num); color: #fff;
+  text-shadow: 0 2px 10px rgb(0 0 0 / .55); }
+.clip[data-keep="false"] .shirt { text-decoration: line-through 4px; }
+.shot .badges { position: absolute; right: 8px; top: 8px; display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.shot .badges .pill { background: rgb(14 21 36 / .82); color: #fff; }
+.shot .badges .pill.guess { background: #f7e7c6; color: #6b4000; }
+.body { padding: 12px 14px 14px; display: grid; gap: 8px; }
+.taps { font-weight: 700; font-size: 18px; }
+.taps small { font-weight: 400; color: var(--ink-2); font-size: 14px; }
+.meta { color: var(--ink-2); font-size: 15px; }
+.why { color: var(--guess); font-size: 14px; }
+.keep { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 48px; width: 100%;
+  border: 2px solid var(--ink); border-radius: 12px; background: var(--ink); color: var(--surface); padding: 0 14px; cursor: pointer; font-weight: 700; }
+.keep[aria-pressed="false"] { background: transparent; color: var(--ink); border-style: dashed; }
+.keep .sw { width: 40px; height: 24px; border-radius: 999px; background: color-mix(in srgb, var(--surface) 30%, transparent); position: relative; flex: none; }
+.keep .sw::after { content: ""; position: absolute; top: 3px; left: 19px; width: 18px; height: 18px; border-radius: 50%; background: var(--surface); transition: left .15s ease-out; }
+.keep[aria-pressed="false"] .sw { background: var(--sunk); }
+.keep[aria-pressed="false"] .sw::after { left: 3px; background: var(--ink-2); }
+
+details.facts { margin-top: 18px; }
+details.facts summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; font-weight: 700; }
+details.facts ul { margin: 6px 0 12px; padding-left: 20px; color: var(--ink-2); }
+details.facts h3 { font-size: 15px; margin: 10px 0 0; }
+
+/* Build */
+.toggles { display: grid; gap: 10px; max-width: 640px; }
+.tg { display: flex; align-items: center; gap: 14px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); cursor: pointer; min-height: 60px; }
+.tg input { appearance: none; width: 48px; height: 28px; border-radius: 999px; background: var(--sunk); border: 2px solid var(--ink-2); position: relative; flex: none; cursor: pointer; margin: 0; }
+.tg input::after { content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: var(--ink-2); transition: left .15s ease-out; }
+.tg input:checked { background: var(--ink); border-color: var(--ink); }
+.tg input:checked::after { left: 23px; background: var(--surface); }
+.tg span b { display: block; }
+.tg span small { color: var(--ink-2); font-size: 14px; }
+.reel video { width: 100%; max-height: 62vh; background: #000; border-radius: var(--radius); display: block; }
+.downloads { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
+.downloads a { display: inline-flex; align-items: center; min-height: 48px; padding: 0 16px; border: 2px solid var(--ink); border-radius: 12px; font-weight: 700; text-decoration: none; }
+.downloads a.primary { background: var(--cone); border-color: var(--cone); color: var(--on-cone); }
+.cliplinks { columns: 2 260px; margin-top: 12px; padding-left: 18px; color: var(--ink-2); font-size: 15px; }
+.cliplinks a { display: inline-block; padding: 6px 0; }
+
+.foot { max-width: 1120px; margin: 0 auto; padding: 0 20px 40px; color: var(--ink-2); font-size: 14px; }
+.foot code { font-size: 13px; background: var(--sunk); padding: 1px 6px; border-radius: 6px; overflow-wrap: anywhere; }
+main { padding-bottom: 40px; }
+
+/* Phone: the next step lives under the thumb. */
+.dock { display: none; }
+@media (max-width: 720px) {
+  body { font-size: 16px; }
+  .top-in { padding: 12px 16px; }
+  .local span { display: none; }
+  main { padding: 4px 16px 150px; }
+  .steps { padding: 12px 16px 0; gap: 4px; }
+  .steps li { font-size: 0; justify-content: center; padding: 6px 0 10px; }
+  .steps li[aria-current="step"] { font-size: 14px; justify-content: flex-start; grid-column: span 1; }
+  .steps li::before { width: 30px; height: 30px; font-size: 19px; }
+  h2 { font-size: 30px; }
+  .choice { grid-template-columns: 1fr; }
+  .tally { grid-template-columns: 1fr auto; }
+  .tally .rail { grid-column: 1 / -1; grid-row: 2; }
+  .clips { grid-template-columns: 1fr; }
+  .seg { display: grid; grid-auto-flow: row; width: 100%; }
+  .seg label + label { border-left: 0; border-top: 2px solid var(--ink); }
+  .actions .go { display: none; }
+  .dock { display: block; position: fixed; left: 0; right: 0; bottom: 0; z-index: 10; padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+    background: color-mix(in srgb, var(--ground) 94%, transparent); border-top: 1px solid var(--line); }
+  .dock .go { width: 100%; }
+  .foot { padding-bottom: 120px; }
+  .dock[hidden] { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
 </head>
 <body>
-<header>
-  <h1>Hype<span>Cut</span></h1>
-  <span class="tag">auto highlight reels</span>
-  <span class="tag" id="ver">…</span>
+<header class="top">
+  <div class="top-in">
+    <h1 class="brand">Falcon Highlights</h1>
+    <p class="local" id="local">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg>
+      <span>Runs on this computer · nothing is uploaded anywhere</span>
+    </p>
+    <button class="theme" id="theme" type="button" aria-label="Switch light or dark">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="5"/><path d="M12 1v3M12 20v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M1 12h3M20 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg>
+    </button>
+  </div>
 </header>
 
+<nav aria-label="Progress">
+  <ol class="steps" id="steps">
+    <li data-step="game">Choose game</li>
+    <li data-step="taps">Your taps</li>
+    <li data-step="review">Review clips</li>
+    <li data-step="build">Build reel</li>
+  </ol>
+</nav>
+
 <main>
-  <section class="card">
-    <div id="drop">
-      <strong>Drop a video here</strong>
-      <small>or click to choose — mp4, mkv, mov, webm, ts</small>
-    </div>
-    <div class="file" id="fname"></div>
-    <input id="picker" type="file" accept="video/*" hidden />
-
-    <div class="ask">Filmed with an XbotGo Falcon?</div>
-    <div class="hint">Add the game's <code>.mark</code> file (the taps you made in the app) and every
-      tap becomes a clip. Taps are not proof of a goal — they mark "something happened near here".</div>
-    <div class="chips">
-      <span class="chip" id="markpick">Add .mark file</span>
-      <span class="file" id="markname"></span>
-    </div>
-    <input id="markfile" type="file" accept=".mark" hidden />
-    <div class="chips" id="falconmode" style="display:none">
-      <span class="chip on" data-mode="marks" title="10 s before and after each tap, nearby taps merged">Just my taps</span>
-      <span class="chip" data-mode="hybrid" title="Slide each window a few seconds toward the action the detectors found">Taps + smart edges</span>
+  <!-- 1. Game -->
+  <section class="step" id="s-game" aria-labelledby="h-game">
+    <h2 id="h-game">Choose the game</h2>
+    <p class="lede">Already copied the game to this computer? Pick it — no 20 GB upload. Otherwise choose the file from this device.</p>
+    <div class="choice" role="radiogroup" aria-label="Where is the game">
+      <label class="opt"><input type="radio" name="src" value="local" checked />
+        <b>On this computer</b><span id="local-count">Games in the games folder</span></label>
+      <label class="opt"><input type="radio" name="src" value="upload" />
+        <b>Upload from this device</b><span>Copies the video into Falcon Highlights first</span></label>
     </div>
 
-    <div class="ask">What kind of video is it?</div>
-    <div class="hint">Only changes what counts as exciting. Skip it if you are not sure.</div>
-    <div class="chips" id="profiles">
-      <span class="chip on" data-profile="">Work it out for me</span>
+    <div id="pane-local">
+      <ul class="list" id="games" aria-label="Games on this computer"></ul>
     </div>
-
-    <div class="ask">What shape do you want?</div>
-    <div class="chips" id="shape">
-      <span class="chip on" data-shape="wide">Same as the original</span>
-      <span class="chip" data-shape="tall">Tall, for phones</span>
-      <span class="chip" data-shape="both">Both</span>
-    </div>
-
-    <button id="go" disabled>Make the highlights</button>
-    <div class="err" id="err"></div>
-
-    <details>
-      <summary>Advanced — none of this is required</summary>
-
-      <label>Length of each reel <span class="val" id="v-target">120s</span></label>
-      <input type="range" id="target" min="30" max="600" step="15" value="120" />
-
-      <div class="row">
-        <div>
-          <label>Clips per reel <span class="val" id="v-per">10</span></label>
-          <input type="range" id="per" min="3" max="20" step="1" value="10" />
-        </div>
-        <div>
-          <label>Sensitivity <span class="val" id="v-pct">92</span></label>
-          <input type="range" id="pct" min="70" max="99" step="1" value="92" />
-        </div>
+    <div id="pane-upload" hidden>
+      <div class="drop" id="drop">
+        <button type="button" class="filebtn" id="pick-video">Choose game video</button>
+        <input id="video-file" type="file" accept="video/*,.mp4,.mov,.mkv" hidden />
+        <div class="picked" id="video-picked">MP4, MOV or MKV — or drop it here</div>
       </div>
-
-      <div class="row">
-        <div>
-          <label>Shortest clip <span class="val" id="v-min">4s</span></label>
-          <input type="range" id="minlen" min="2" max="15" step="1" value="4" />
-        </div>
-        <div>
-          <label>Longest clip <span class="val" id="v-max">20s</span></label>
-          <input type="range" id="maxlen" min="6" max="60" step="2" value="20" />
-        </div>
-      </div>
-
-      <label>Detectors</label>
-      <div class="chips" id="refiners"></div>
-
-      <label>Edge placement</label>
-      <div class="chips">
-        <span class="chip on" id="snap" title="Move clip edges onto nearby shot boundaries">snap to cuts</span>
-        <span class="chip on" id="trim" title="Move un-snapped edges into nearby pauses">trim to pauses</span>
-        <span class="chip" id="track" title="Let a tall crop pan to follow the action">pan to follow</span>
-        <span class="chip" id="react" title="Pull a tall crop toward the facecam when it is busy">react to facecam</span>
-      </div>
-    </details>
+    </div>
   </section>
 
-  <section class="card" id="result">
-    <div class="status"><span id="msg">waiting for a video</span><span id="pct-txt">0%</span></div>
-    <div class="bar"><i id="fill"></i></div>
-    <div id="parts"></div>
-    <details id="details-wrap" style="display:none">
-      <summary>What it picked, and why</summary>
-      <div id="clips" class="empty">No cut list yet.</div>
-    </details>
+  <!-- 2. Taps -->
+  <section class="step" id="s-taps" aria-labelledby="h-taps" hidden>
+    <h2 id="h-taps">Your taps</h2>
+    <p class="lede">Each tap you made in the Falcon app becomes a clip: 10 s before to 10 s after, with taps close together joined. A tap means “something happened here” — not necessarily a goal.</p>
+    <ul class="list" id="marks" aria-label="Tap files"></ul>
+    <div id="mark-upload" hidden>
+      <button type="button" class="filebtn" id="pick-mark">Choose the .mark file</button>
+      <input id="mark-file" type="file" accept=".mark" hidden />
+      <div class="picked" id="mark-picked">On the camera’s SD card it sits in the hidden <b>.data</b> folder.</div>
+    </div>
+    <fieldset class="seg" id="mode">
+      <legend class="vh">How to use the taps</legend>
+      <label><input type="radio" name="mode" value="marks" checked />Just my taps<small>Exactly where you tapped</small></label>
+      <label><input type="radio" name="mode" value="hybrid" />Taps + smart edges<small>Edges may shift · inferred</small></label>
+      <label><input type="radio" name="mode" value="detect" />No taps<small>Detector guesses only</small></label>
+    </fieldset>
+    <div class="actions"><button class="go" id="plan-go" type="button" disabled>Find my clips</button>
+      <span class="note">Nothing gets cut yet — you review first.</span></div>
+    <div class="err" id="plan-err" role="alert"></div>
+    <div class="status" id="plan-status" hidden aria-live="polite">
+      <div class="status-line"><span class="status-pct num" id="plan-pct">0%</span><span class="status-msg" id="plan-msg">Starting</span></div>
+      <div class="track"><i id="plan-fill"></i></div>
+    </div>
+  </section>
+
+  <!-- 3. Review -->
+  <section class="step" id="s-review" aria-labelledby="h-review" hidden>
+    <h2 id="h-review">Review clips</h2>
+    <p class="lede">Tap <b>Keep</b> to leave a clip out of the reel. Times are from the start of the video.</p>
+    <div class="tally" aria-live="polite">
+      <div><span class="big num" id="reel-len">0:00</span><small id="reel-count">0 clips in the reel</small></div>
+      <div class="rail" id="rail" role="img" aria-label="Where the clips sit in the game"></div>
+      <div class="bulk"><button class="ghost" type="button" id="keep-all">Keep all</button><button class="ghost" type="button" id="drop-all">Drop all</button></div>
+    </div>
+    <ul class="clips" id="clips"></ul>
+    <details class="facts" id="facts"><summary>What the files say, and what is a guess</summary><div id="facts-body"></div></details>
+    <div class="actions"><button class="go" id="to-build" type="button">Next: build the reel</button></div>
+  </section>
+
+  <!-- 4. Build -->
+  <section class="step" id="s-build" aria-labelledby="h-build" hidden>
+    <h2 id="h-build">Build the reel</h2>
+    <p class="lede" id="build-lede">Cuts the clips you kept and joins them into one video.</p>
+    <div class="toggles">
+      <label class="tg"><input type="checkbox" id="x-phone" /><span><b>Phone copy</b><small>Also make a 1080p version that is quick to send</small></span></label>
+      <label class="tg"><input type="checkbox" id="x-vertical" /><span><b>Vertical 9:16</b><small>For Stories and Reels; the frame follows the action</small></span></label>
+      <label class="tg"><input type="checkbox" id="x-loud" /><span><b>Even out the sound</b><small>Loud cheers and quiet clips end up at one volume</small></span></label>
+    </div>
+    <div class="actions"><button class="go" id="build-go" type="button">Build my reel</button>
+      <button class="ghost" type="button" id="back-review">Back to clips</button></div>
+    <div class="err" id="build-err" role="alert"></div>
+    <div class="status" id="build-status" hidden aria-live="polite">
+      <div class="status-line"><span class="status-pct num" id="build-pct">0%</span><span class="status-msg" id="build-msg">Starting</span></div>
+      <div class="track"><i id="build-fill"></i></div>
+    </div>
+    <div class="reel" id="reel"></div>
   </section>
 </main>
 
-<footer>
-  Self-hosted. Nothing leaves this machine. The same thing from a terminal:
-  <code>hypecut cut video.mp4 -o reel.mp4</code>
-</footer>
+<footer class="foot">Falcon Highlights is built on <a href="https://github.com/Yu-0312/hypecut">HypeCut</a> (Apache-2.0). Same thing from a terminal: <code>hypecut falcon game.mp4 --marks game.mark --plan-only</code></footer>
+
+<div class="dock" id="dock" hidden><button class="go" id="dock-go" type="button"></button></div>
 
 <script>
 const $ = (id) => document.getElementById(id);
-let file = null, poll = null;
-let chosenRefiners = new Set(["diversity", "pacing", "similarity"]);
-let profile = "", shape = "wide";
-let markFile = null, falconMode = "marks";
+const esc = (t) => String(t).replace(/[&<>"']/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+const clock = (t) => { t = Math.max(0, Math.round(t)); const h = Math.floor(t / 3600), m = Math.floor(t % 3600 / 60), s = t % 60;
+  return (h ? h + ":" + String(m).padStart(2, "0") : m) + ":" + String(s).padStart(2, "0"); };
+const gb = (n) => n >= 1e9 ? (n / 1e9).toFixed(1) + " GB" : (n / 1e6).toFixed(0) + " MB";
 
-[["target", "v-target", (v) => v + "s"],
- ["per", "v-per", (v) => v],
- ["pct", "v-pct", (v) => v],
- ["minlen", "v-min", (v) => v + "s"],
- ["maxlen", "v-max", (v) => v + "s"]].forEach(([id, out, fmt]) => {
-  $(id).addEventListener("input", () => ($(out).textContent = fmt($(id).value)));
-});
+const S = { src: "local", games: [], game: null, mark: null, videoFile: null, markFile: null, mode: "marks",
+  job: null, plan: null, keep: new Set(), step: "game", poll: null };
 
-// Chip groups where exactly one is chosen.
-function pickOne(container, onPick) {
-  container.querySelectorAll(".chip").forEach((chip) => {
-    chip.onclick = () => {
-      container.querySelectorAll(".chip").forEach((c) => c.classList.remove("on"));
-      chip.classList.add("on");
-      onPick(chip);
-    };
-  });
-}
-
-fetch("/api/meta").then((r) => r.json()).then((m) => {
-  $("ver").textContent = "v" + m.version;
-
-  const box = $("profiles");
-  (m.profiles || []).forEach((p) => {
-    if (p.name === "default") return;  // that is what "work it out for me" is
-    const chip = document.createElement("span");
-    chip.className = "chip";
-    chip.textContent = p.name.replace(/-/g, " ");
-    chip.title = p.summary || "";
-    chip.dataset.profile = p.path;
-    box.appendChild(chip);
-  });
-  pickOne(box, (chip) => (profile = chip.dataset.profile));
-
-  const refBox = $("refiners");
-  Object.entries(m.refiners || {}).forEach(([name, desc]) => {
-    const chip = document.createElement("span");
-    chip.className = "chip" + (chosenRefiners.has(name) ? " on" : "");
-    chip.textContent = name;
-    chip.title = desc;
-    chip.onclick = () => {
-      chosenRefiners.has(name) ? chosenRefiners.delete(name) : chosenRefiners.add(name);
-      chip.classList.toggle("on");
-    };
-    refBox.appendChild(chip);
-  });
-}).catch(() => {});
-
-pickOne($("shape"), (chip) => (shape = chip.dataset.shape));
-pickOne($("falconmode"), (chip) => (falconMode = chip.dataset.mode));
-$("markpick").onclick = () => $("markfile").click();
-$("markfile").onchange = (ev) => {
-  markFile = ev.target.files[0] || null;
-  $("markname").textContent = markFile ? markFile.name : "";
-  $("falconmode").style.display = markFile ? "" : "none";
+/* theme */
+const savedTheme = localStorage.getItem("fh-theme");
+if (savedTheme) document.documentElement.dataset.theme = savedTheme;
+$("theme").onclick = () => {
+  const dark = document.documentElement.dataset.theme
+    ? document.documentElement.dataset.theme === "dark"
+    : matchMedia("(prefers-color-scheme: dark)").matches;
+  const next = dark ? "light" : "dark";
+  document.documentElement.dataset.theme = next;
+  localStorage.setItem("fh-theme", next);
 };
-["track", "react", "snap", "trim"].forEach((id) => {
-  $(id).onclick = () => $(id).classList.toggle("on");
-});
 
-const drop = $("drop");
-drop.onclick = () => $("picker").click();
-["dragenter", "dragover"].forEach((e) =>
-  drop.addEventListener(e, (ev) => { ev.preventDefault(); drop.classList.add("hot"); }));
-["dragleave", "drop"].forEach((e) =>
-  drop.addEventListener(e, (ev) => { ev.preventDefault(); drop.classList.remove("hot"); }));
-drop.addEventListener("drop", (ev) => setFile(ev.dataTransfer.files[0]));
-$("picker").onchange = (ev) => setFile(ev.target.files[0]);
-
-function setFile(f) {
-  if (!f) return;
-  file = f;
-  $("fname").textContent = `${f.name} · ${(f.size / 1048576).toFixed(1)} MB`;
-  $("go").disabled = false;
-  $("msg").textContent = "ready when you are";
+/* steps */
+const ORDER = ["game", "taps", "review", "build"];
+function go(step, { scroll = true } = {}) {
+  S.step = step;
+  const at = ORDER.indexOf(step);
+  ORDER.forEach((s, i) => {
+    $("s-" + s).hidden = i > at;
+    const li = document.querySelector(`[data-step="${s}"]`);
+    li.dataset.state = i < at ? "done" : "";
+    if (i === at) li.setAttribute("aria-current", "step"); else li.removeAttribute("aria-current");
+  });
+  refresh();
+  if (scroll) $("s-" + step).scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
 }
 
-$("go").onclick = async () => {
-  if (!file) return;
-  $("go").disabled = true;
-  $("err").textContent = "";
-  $("parts").innerHTML = "";
-  $("details-wrap").style.display = "none";
+/* the one primary action, mirrored into the phone dock */
+function primary() {
+  if (S.step === "game" || S.step === "taps") return $("plan-go");
+  if (S.step === "review") return $("to-build");
+  return $("build-go");
+}
+function refresh() {
+  const ready = (S.src === "local" ? !!S.game : !!S.videoFile) && (S.mode === "detect" || (S.src === "local" ? !!S.mark : !!S.markFile));
+  $("plan-go").disabled = !ready || S.busy;
+  $("to-build").disabled = S.keep.size === 0;
+  $("build-go").disabled = S.keep.size === 0 || S.busy || S.built;
+  $("build-go").textContent = `Build my reel · ${clock(reelSeconds())}`;
+  $("to-build").textContent = S.keep.size ? `Next: build the reel (${S.keep.size} clips)` : "Keep at least one clip";
+  const p = primary();
+  $("dock").hidden = S.built && S.step === "build";
+  $("dock-go").textContent = S.busy ? "Working… you can leave this page open" : S.step === "game" && !ready ? (S.game || S.videoFile ? "Choose your taps" : "Pick a game first") : p.textContent;
+  $("dock-go").disabled = S.step === "game" ? !(S.game || S.videoFile) : p.disabled;
+}
+$("dock-go").onclick = () => { if (S.step === "game") go("taps"); else primary().click(); };
 
-  const fd = new FormData();
-  fd.append("file", file);
-  fd.append("profile", profile);
-  fd.append("target_duration", $("target").value);
-  fd.append("clips_per_reel", $("per").value);
-  fd.append("percentile", $("pct").value);
-  fd.append("min_duration", $("minlen").value);
-  fd.append("max_duration", $("maxlen").value);
-  fd.append("refiners", [...chosenRefiners].join(","));
-  // "Tall" renders vertical directly; "both" keeps the original and adds one.
-  fd.append("reframe", shape === "tall" ? "crop" : "off");
-  fd.append("also", shape === "both" ? "vertical" : "");
-  fd.append("reframe_track", $("track").classList.contains("on"));
-  fd.append("snap_to_shots", $("snap").classList.contains("on"));
-  fd.append("trim_to_silence", $("trim").classList.contains("on"));
-  fd.append("react_to_facecam", $("react").classList.contains("on"));
-  if (markFile) {
-    fd.append("marks", markFile);
-    fd.append("falcon_mode", falconMode);
-    // Falcon jobs: "tall" adds a 9:16 cut, "both" adds 9:16 and a 1080p phone copy.
-    fd.append("falcon_vertical", shape !== "wide");
-    fd.append("falcon_phone", shape === "both");
-  }
-
+/* 1. game */
+document.querySelectorAll('input[name="src"]').forEach((r) => r.onchange = () => {
+  S.src = r.value; $("pane-local").hidden = S.src !== "local"; $("pane-upload").hidden = S.src !== "upload";
+  renderMarks(); refresh();
+});
+async function loadGames() {
   try {
-    const res = await fetch("/api/jobs", { method: "POST", body: fd });
-    if (!res.ok) throw new Error((await res.json()).detail || res.statusText);
-    const { id } = await res.json();
-    watch(id);
-  } catch (e) {
-    $("err").textContent = e.message;
-    $("go").disabled = false;
-  }
-};
-
-function watch(id) {
-  clearInterval(poll);
-  poll = setInterval(async () => {
-    const job = await (await fetch("/api/jobs/" + id)).json();
-    const pct = Math.round((job.progress || 0) * 100);
-    $("fill").style.width = pct + "%";
-    $("pct-txt").textContent = pct + "%";
-    $("msg").textContent = job.message || job.status;
-
-    if (job.plan) renderClips(job.plan);
-    if (job.status === "done") {
-      clearInterval(poll);
-      $("go").disabled = false;
-      job.parts ? showReels(id, job) : showNothing(job);
-    }
-    if (job.status === "failed") {
-      clearInterval(poll);
-      $("go").disabled = false;
-      $("err").textContent = job.error || "failed";
-    }
-  }, 900);
-}
-
-function showReels(id, job) {
-  const many = job.parts > 1;
-  const blocks = [];
-  if (many) {
-    blocks.push(`<p class="sub" style="margin-top:18px">There was more here than fits in one
-      reel, so it is split into ${job.parts} parts, in order.</p>`);
-  }
-  for (let i = 1; i <= job.parts; i++) {
-    // Part 1 is also served at /reel, so a single reel keeps the simple link.
-    const src = many ? `/api/jobs/${id}/part/${i}` : `/api/jobs/${id}/reel`;
-    const variants = (job.variants || [])
-      .map((v) => `<a class="dl" href="/api/jobs/${id}/reel/${v}" download>${v} version</a>`)
-      .join("");
-    const clips = (job.clips || [])
-      .map((name, n) => `<a class="dl" href="/api/jobs/${id}/clip/${n + 1}" download>${name}</a>`)
-      .join("");
-    blocks.push(`<div class="part">
-      ${many ? `<h3>Part ${i} of ${job.parts}</h3>` : ""}
-      <video controls src="${src}"></video>
-      <a class="dl" href="${src}" download>Download${many ? ` part ${i}` : ""}</a>
-      ${i === 1 ? variants : ""}
-      ${i === 1 ? clips : ""}
-    </div>`);
-  }
-  $("parts").innerHTML = blocks.join("");
-  $("details-wrap").style.display = "";
-}
-
-function showNothing(job) {
-  // Not an error, and it must not look like one. A quiet recording is a
-  // perfectly ordinary thing to upload.
-  $("parts").innerHTML = `<div class="nothing">
-    <p><strong>No highlights in this one.</strong></p>
-    <p class="sub">${job.message || "nothing stood out"}</p>
-    <small>If you know there is something in there, open Advanced and raise the
-    sensitivity — or pick the kind of video, which changes what counts.</small>
-  </div>`;
-}
-
-function renderClips(plan) {
-  const box = $("clips");
-  if (plan.falcon_plan) return renderFalcon(plan, box);
-  if (!plan.segments || !plan.segments.length) {
-    box.className = "empty";
-    box.textContent = "Nothing cleared the threshold.";
+    const data = await (await fetch("/api/games")).json();
+    S.games = data.games || []; S.root = data.root || "games";
+  } catch { S.games = []; }
+  $("local-count").textContent = S.games.length ? `${S.games.length} game${S.games.length > 1 ? "s" : ""} in the ${S.root} folder` : `Nothing in the ${S.root || "games"} folder yet`;
+  const ul = $("games");
+  if (!S.games.length) {
+    ul.innerHTML = `<li class="empty">No games found. Copy a game into the <code>${esc(S.root || "games")}</code> folder next to Falcon Highlights (for example <code>games\\20260425\\</code>), then reload — or upload it instead.</li>`;
     return;
   }
-  box.className = "";
-  box.innerHTML = plan.segments.map((s, i) => {
-    const why = Object.entries(s.reasons || {})
-      .sort((a, b) => b[1] - a[1]).slice(0, 2)
-      .map(([k, v]) => `${k} ${v.toFixed(2)}`).join(" · ") || "—";
-    const meta = s.meta || {};
-    const tags = [];
-    if (meta.reel) tags.push("part " + meta.reel);
-    if (meta.snapped) tags.push("snapped to cut");
-    if (meta.trimmed) tags.push("trimmed to pause");
-    if (meta.repeat_penalty) tags.push("looks like an earlier moment");
-    if (meta.reframe && meta.reframe.mode !== "off") {
-      tags.push(meta.reframe.mode + (meta.reframe.keyframes ? " · pan" : ""));
+  ul.innerHTML = S.games.map((g, i) => `<li><label class="row"><input type="radio" name="game" value="${i}" />
+    <span class="what"><b>${esc(g.name)}</b><small>${g.folder ? esc(g.folder) + " · " : ""}<span class="tab">${gb(g.size)}</span></small></span>
+    <span class="pill ${g.marks.length ? "ok" : ""}">${g.marks.length ? g.marks.length + " tap file" + (g.marks.length > 1 ? "s" : "") : "no tap file"}</span></label></li>`).join("");
+  ul.querySelectorAll("input").forEach((r) => r.onchange = () => {
+    S.game = S.games[+r.value]; S.mark = S.game.marks[0] || null;
+    if (!S.mark) setMode("detect");
+    renderMarks(); go("taps");
+  });
+}
+$("pick-video").onclick = () => $("video-file").click();
+$("video-file").onchange = (e) => setVideo(e.target.files[0]);
+const drop = $("drop");
+["dragenter", "dragover"].forEach((t) => drop.addEventListener(t, (e) => { e.preventDefault(); drop.classList.add("hot"); }));
+["dragleave", "drop"].forEach((t) => drop.addEventListener(t, (e) => { e.preventDefault(); drop.classList.remove("hot"); }));
+drop.addEventListener("drop", (e) => setVideo(e.dataTransfer.files[0]));
+function setVideo(f) {
+  if (!f) return; S.videoFile = f;
+  $("video-picked").innerHTML = `<b>${esc(f.name)}</b> · <span class="tab">${gb(f.size)}</span>`;
+  renderMarks(); go("taps");
+}
+
+/* 2. taps */
+function setMode(m) { S.mode = m; document.querySelector(`input[name="mode"][value="${m}"]`).checked = true; refresh(); }
+document.querySelectorAll('input[name="mode"]').forEach((r) => r.onchange = () => { S.mode = r.value; refresh(); });
+function renderMarks() {
+  const ul = $("marks");
+  $("mark-upload").hidden = S.src !== "upload";
+  ul.hidden = S.src !== "local";
+  if (S.src !== "local") return refresh();
+  const marks = S.game ? S.game.marks : [];
+  ul.innerHTML = marks.length ? marks.map((m, i) => `<li><label class="row"><input type="radio" name="mark" value="${i}" ${S.mark && S.mark.path === m.path ? "checked" : ""} />
+      <span class="what"><b>${esc(m.name)}</b><small>${m.path.includes("/.data/") ? "from the hidden .data folder" : "next to the video"}${m.same_name ? " · same name as the video" : ""}</small></span>
+      <span class="pill tab">${m.taps} taps</span></label></li>`).join("")
+    : `<li class="empty">${S.game ? "No .mark file next to this game or in its <code>.data</code> folder. Copy it there and reload, or use “No taps”." : "Pick a game first."}</li>`;
+  if (marks.length > 1 && !marks.some((m) => m.same_name)) {
+    ul.insertAdjacentHTML("afterbegin", `<li class="pill guess" style="justify-self:start">Several tap files and none has the video’s name — pick the one from this game’s recording.</li>`);
+  }
+  ul.querySelectorAll('input[name="mark"]').forEach((r) => r.onchange = () => { S.mark = marks[+r.value]; refresh(); });
+  refresh();
+}
+$("pick-mark").onclick = () => $("mark-file").click();
+$("mark-file").onchange = (e) => { S.markFile = e.target.files[0] || null; $("mark-picked").innerHTML = S.markFile ? `<b>${esc(S.markFile.name)}</b>` : ""; refresh(); };
+
+$("plan-go").onclick = async () => {
+  $("plan-err").textContent = ""; S.busy = true; S.built = false; refresh();
+  showStatus("plan", 0, S.src === "upload" ? "Uploading" : "Reading the taps");
+  try {
+    let id;
+    if (S.src === "local") {
+      const res = await fetch("/api/games/plan", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ game: S.game.path, mark: S.mode === "detect" ? null : S.mark && S.mark.path, mode: S.mode }) });
+      if (!res.ok) throw new Error((await res.json()).detail || res.statusText);
+      id = (await res.json()).id;
+    } else {
+      id = await upload();
     }
-    const tagged = tags.length ? ` · ${tags.join(" · ")}` : "";
-    return `<div class="clip">
-      <span class="idx">${String(i + 1).padStart(2, "0")}</span>
-      <span>${hhmmss(s.start)} → ${hhmmss(s.end)}
-        <span class="why">(${s.duration.toFixed(1)}s · ${why}${tagged})</span></span>
-      <span class="sc">${s.score.toFixed(3)}</span>
-    </div>`;
+    watch(id, "plan");
+  } catch (e) { S.busy = false; $("plan-status").hidden = true; $("plan-err").textContent = e.message; refresh(); }
+};
+function upload() {
+  return new Promise((resolve, reject) => {
+    const fd = new FormData();
+    fd.append("file", S.videoFile);
+    if (S.mode !== "detect" && S.markFile) fd.append("marks", S.markFile);
+    fd.append("falcon_mode", S.mode);
+    fd.append("plan_only", "true");
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", "/api/jobs");
+    xhr.upload.onprogress = (e) => e.lengthComputable && showStatus("plan", e.loaded / e.total, `Uploading · ${gb(e.loaded)} of ${gb(e.total)}`);
+    xhr.onload = () => { let d = {}; try { d = JSON.parse(xhr.responseText); } catch {}
+      xhr.status === 202 ? resolve(d.id) : reject(new Error(d.detail || "Upload failed")); };
+    xhr.onerror = () => reject(new Error("Upload stopped. Check the server is still running and try again."));
+    xhr.send(fd);
+  });
+}
+
+/* jobs */
+function showStatus(kind, frac, msg) {
+  $(kind + "-status").hidden = false;
+  const pct = Math.round(frac * 100);
+  $(kind + "-pct").textContent = pct + "%"; $(kind + "-fill").style.width = pct + "%"; $(kind + "-msg").textContent = msg;
+}
+function watch(id, kind) {
+  S.job = id; localStorage.setItem("fh-job", id);
+  clearInterval(S.poll);
+  const tick = async () => {
+    let job;
+    try { job = await (await fetch("/api/jobs/" + id)).json(); } catch { return; }
+    if (!job || job.detail) { clearInterval(S.poll); S.busy = false; localStorage.removeItem("fh-job"); refresh(); return; }
+    showStatus(kind, job.progress || 0, friendly(job.message || job.status));
+    if (job.status === "failed") {
+      clearInterval(S.poll); S.busy = false;
+      $(kind + "-err").textContent = "That didn’t work: " + (job.error || "unknown error"); refresh(); return;
+    }
+    if (job.status !== "done") return;
+    clearInterval(S.poll); S.busy = false;
+    if (job.stage === "planned") { loadPlan(job); go("review"); }
+    else if (job.stage === "built" || job.output) { S.built = true; showReel(id, job); refresh(); }
+    else { $(kind + "-err").textContent = job.message || "No clips to cut."; refresh(); }
+  };
+  S.poll = setInterval(tick, 1000); tick();
+}
+const friendly = (m) => String(m).replace(/^(\w)/, (c) => c.toUpperCase());
+
+/* 3. review */
+function loadPlan(job) {
+  S.plan = job.plan;
+  S.keep = new Set(S.plan.clips.filter((c) => c.keep).map((c) => c.id));
+  const clips = S.plan.clips;
+  $("clips").innerHTML = clips.map((c) => {
+    const shift = (c.meta && c.meta.shift || []).some((s) => Math.abs(s) >= 0.5);
+    const taps = c.marks && c.marks.length ? c.marks.map(clock).join(" + ") : "";
+    const badges = [c.marks && c.marks.length > 1 ? `<span class="pill">Merged · ${c.marks.length} taps</span>` : "",
+      c.kind === "auto" ? `<span class="pill guess">No tap · detector guess</span>` : "",
+      shift ? `<span class="pill guess">Edges moved · inferred</span>` : ""].join("");
+    const why = c.kind === "auto" ? "Nobody tapped here; a detector thought something happened. It can’t tell a goal from a scramble."
+      : shift ? "Detectors slid this window toward where they think the action peaked. That is a guess, not something you tapped." : "";
+    const n = c.id.replace(/^clip/, "");
+    return `<li class="clip" data-id="${esc(c.id)}" data-keep="${S.keep.has(c.id)}">
+      <div class="shot"><img src="/api/jobs/${S.job}/thumb/${encodeURIComponent(c.id)}" alt="Frame at ${taps || clock(c.start)}" loading="lazy" decoding="async" onerror="this.remove()" />
+        <span class="shirt" aria-hidden="true">${esc(n)}</span><span class="badges">${badges}</span></div>
+      <div class="body">
+        <div class="taps">${taps ? (c.marks.length > 1 ? "Taps at " : "Tap at ") + `<span class="tab">${taps}</span>` : "No tap"} <small>· ${esc(c.id)}</small></div>
+        <div class="meta tab">${clock(c.start)} – ${clock(c.end)} · ${Math.round(c.end - c.start)} s</div>
+        ${why ? `<div class="why">${why}</div>` : ""}
+        <button class="keep" type="button" aria-pressed="${S.keep.has(c.id)}" aria-label="Keep ${esc(c.id)} in the reel"><span>${S.keep.has(c.id) ? "Keep" : "Dropped"}</span><span class="sw" aria-hidden="true"></span></button>
+      </div></li>`;
   }).join("");
+  $("clips").querySelectorAll(".keep").forEach((b) => b.onclick = () => {
+    const li = b.closest(".clip"), id = li.dataset.id;
+    S.keep.has(id) ? S.keep.delete(id) : S.keep.add(id);
+    paintKeep(li); tally();
+  });
+  const facts = (S.plan.facts || []).map((f) => `<li>${esc(f)}</li>`).join("");
+  const notes = (S.plan.notes || []).map((f) => `<li>${esc(f)}</li>`).join("");
+  $("facts-body").innerHTML = `<h3>From the files</h3><ul>${facts || "<li>—</li>"}</ul>` + (notes ? `<h3>Guesses and warnings</h3><ul>${notes}</ul>` : "");
+  S.built = false; $("reel").innerHTML = ""; $("build-status").hidden = true;
+  tally();
+}
+function paintKeep(li) {
+  const on = S.keep.has(li.dataset.id), b = li.querySelector(".keep");
+  li.dataset.keep = on; b.setAttribute("aria-pressed", on); b.firstElementChild.textContent = on ? "Keep" : "Dropped";
+}
+function reelSeconds() { return S.plan ? S.plan.clips.filter((c) => S.keep.has(c.id)).reduce((a, c) => a + (c.end - c.start), 0) : 0; }
+function tally() {
+  const total = S.plan.clips.length;
+  $("reel-len").textContent = clock(reelSeconds());
+  $("reel-count").textContent = `${S.keep.size} of ${total} clips in the reel`;
+  const dur = S.plan.duration || Math.max(...S.plan.clips.map((c) => c.end), 1);
+  const ticks = [0, .25, .5, .75].map((f) => `<b style="left:${f * 100}%">${clock(dur * f)}</b>`).join("");
+  $("rail").innerHTML = S.plan.clips.map((c) => `<i class="${S.keep.has(c.id) ? "" : "off"}" style="left:${c.start / dur * 100}%;width:${(c.end - c.start) / dur * 100}%"></i>`).join("") + ticks;
+  $("rail").setAttribute("aria-label", `${S.keep.size} kept clips across a ${clock(dur)} game`);
+  refresh();
+}
+$("keep-all").onclick = () => { S.plan.clips.forEach((c) => S.keep.add(c.id)); document.querySelectorAll(".clip").forEach(paintKeep); tally(); };
+$("drop-all").onclick = () => { S.keep.clear(); document.querySelectorAll(".clip").forEach(paintKeep); tally(); };
+$("to-build").onclick = () => { $("build-lede").textContent = `Cuts the ${S.keep.size} clips you kept (${clock(reelSeconds())}) and joins them into one video. A 4K game can take several minutes.`; go("build"); };
+$("back-review").onclick = () => go("review");
+
+/* 4. build */
+$("build-go").onclick = async () => {
+  $("build-err").textContent = ""; S.busy = true; refresh();
+  showStatus("build", 0, "Queued");
+  try {
+    const res = await fetch(`/api/jobs/${S.job}/render`, { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ keep: [...S.keep], phone: $("x-phone").checked, vertical: $("x-vertical").checked, loudnorm: $("x-loud").checked }) });
+    if (!res.ok) throw new Error((await res.json()).detail || res.statusText);
+    watch(S.job, "build");
+  } catch (e) { S.busy = false; $("build-status").hidden = true; $("build-err").textContent = e.message; refresh(); }
+};
+function showReel(id, job) {
+  const v = (job.variants || []).map((name) => `<a href="/api/jobs/${id}/reel/${encodeURIComponent(name)}" download>${name === "phone" ? "Phone copy (1080p)" : name === "vertical" ? "Vertical 9:16" : esc(name)}</a>`).join("");
+  const clips = (job.clips || []).map((n, i) => `<li><a href="/api/jobs/${id}/clip/${i + 1}" download>${esc(n)}</a></li>`).join("");
+  $("reel").innerHTML = `<h3 style="font:800 26px/1 var(--num);text-transform:uppercase;margin:26px 0 12px">Your reel is ready</h3>
+    <video controls preload="metadata" src="/api/jobs/${id}/reel"></video>
+    <div class="downloads"><a class="primary" href="/api/jobs/${id}/reel" download>Download highlights.mp4</a>${v}</div>
+    <details class="facts"><summary>Single clips (${(job.clips || []).length})</summary><ul class="cliplinks">${clips}</ul></details>`;
 }
 
-function renderFalcon(plan, box) {
-  const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
-  const facts = (plan.facts || []).map((f) => `<li>${esc(f)}</li>`).join("");
-  const notes = [...(plan.notes || []), ...(plan.render_notes || [])].map((f) => `<li>${esc(f)}</li>`).join("");
-  const rows = (plan.clips || []).map((c) => `<div class="clip">
-      <span class="idx">${esc(c.id.replace("clip", ""))}</span>
-      <span>${hhmmss(c.start)} → ${hhmmss(c.end)}
-        <span class="why">(${c.duration.toFixed(1)}s · ${c.kind === "mark" ? "tap " + esc(c.note) : esc(c.note)} · ${esc(c.filename)})</span></span>
-      <span class="sc">${c.kind}</span>
-    </div>`).join("");
-  box.className = "";
-  box.innerHTML = `<p class="sub">From the files:</p><ul>${facts}</ul>`
-    + (notes ? `<p class="sub">Notes and guesses:</p><ul>${notes}</ul>` : "")
-    + (rows || "<p>No clips.</p>");
-}
-
-function hhmmss(t) {
-  t = Math.floor(t);
-  const p = (n) => String(n).padStart(2, "0");
-  return `${p(Math.floor(t / 3600))}:${p(Math.floor((t % 3600) / 60))}:${p(t % 60)}`;
-}
+/* resume a job after a reload */
+(async () => {
+  await loadGames();
+  go("game", { scroll: false });
+  const saved = localStorage.getItem("fh-job");
+  if (!saved) return;
+  try {
+    const r = await fetch("/api/jobs/" + saved); if (!r.ok) throw 0;
+    const job = await r.json();
+    if (job.stage === "planned" && job.status === "done") { S.job = saved; loadPlan(job); go("review", { scroll: false }); }
+    else if (job.stage === "built" && job.status === "done") { S.job = saved; loadPlan(job); go("build", { scroll: false }); S.built = true; showReel(saved, job); refresh(); }
+    else if (job.status === "running" || job.status === "queued") { S.job = saved; S.busy = true; go(job.stage === "render" ? "build" : "taps", { scroll: false }); watch(saved, job.stage === "render" ? "build" : "plan"); }
+  } catch { localStorage.removeItem("fh-job"); }
+})();
 </script>
 </body>
 </html>
