@@ -368,3 +368,17 @@ def test_falcon_cli_rejects_titles_on_unknown_clips(tmp_path, monkeypatch):
     _write_marks(video, [12.0], extra_after_end=False)
     code = main(["falcon", str(video), "--plan-only", "-q", "--title", "clip07=Goal!"])
     assert code == 1
+
+
+def test_paths_are_absolute_because_remotion_runs_in_the_project(project, monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    r = _runner(project, FakeRemotion(False))
+    args = r.render_args("Intro", Path("cards/intro.mp4"), Path("cards/p.json"), transparent=False)
+    assert Path(args[5]).is_absolute() and args[5].endswith("intro.mp4")
+    assert args[6] == f"--props={(tmp_path / 'cards' / 'p.json').resolve()}"
+
+
+def test_config_file_with_bom(tmp_path):
+    p = tmp_path / "overlays.json"
+    p.write_text('{"intro": true, "team": "Test FC"}', encoding="utf-8-sig")
+    assert ov.OverlayConfig.load(p).team == "Test FC"

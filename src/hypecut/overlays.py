@@ -246,7 +246,7 @@ class OverlayConfig:
     @classmethod
     def load(cls, path: str | Path) -> OverlayConfig:
         try:
-            data = json.loads(Path(path).read_text(encoding="utf-8"))
+            data = json.loads(Path(path).read_text(encoding="utf-8-sig"))
         except json.JSONDecodeError as exc:
             raise ValueError(f"{path}: not valid JSON ({exc})") from exc
         return cls.from_dict(data)
@@ -342,8 +342,9 @@ class RemotionRunner:
             verb,
             ENTRY,
             composition,
-            str(out),
-            f"--props={props}",
+            # Remotion runs with cwd = the project, so relative paths would land there.
+            str(Path(out).resolve()),
+            f"--props={Path(props).resolve()}",
             "--log=error",
         ]
         if self.browser:
@@ -855,7 +856,7 @@ def config_from_falcon_args(args: Any) -> OverlayConfig | None:
         return None
     data: dict[str, Any] = {}
     if getattr(args, "overlays_config", None):
-        data = json.loads(Path(args.overlays_config).read_text(encoding="utf-8"))
+        data = json.loads(Path(args.overlays_config).read_text(encoding="utf-8-sig"))
     for flag, key in (
         ("player", "player"),
         ("number", "number"),
